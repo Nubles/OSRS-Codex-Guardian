@@ -1,0 +1,845 @@
+package com.codex.guardian;
+
+import com.codex.guardian.core.CloseCallWatch;
+import com.codex.guardian.core.DamageLog;
+import com.codex.guardian.core.Journal;
+import com.codex.guardian.core.Peril;
+import com.codex.guardian.core.PerilAssessor;
+import com.codex.guardian.core.Readiness;
+import com.codex.guardian.core.Risk;
+import com.codex.guardian.core.Situation;
+import com.codex.guardian.core.Supplies;
+import com.codex.guardian.core.Threat;
+import com.codex.guardian.core.Zone;
+import com.codex.guardian.core.Zones;
+import com.codex.guardian.overlay.PerilVignette;
+import com.codex.guardian.overlay.WardOverlay;
+import com.codex.guardian.ui.GuardianPanel;
+import com.codex.guardian.ui.Mark;
+import com.codex.guardian.ui.Shield;
+import com.codex.guardian.ui.Theme;
+import com.google.gson.Gson;
+import com.google.inject.Provides;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.EnumMap;
+import java.util.EnumSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import javax.inject.Inject;
+import javax.swing.SwingUtilities;
+import net.runelite.api.Actor;
+import net.runelite.api.Client;
+import net.runelite.api.GameState;
+import net.runelite.api.Hitsplat;
+import net.runelite.api.HitsplatID;
+import net.runelite.api.Item;
+import net.runelite.api.ItemComposition;
+import net.runelite.api.ItemContainer;
+import net.runelite.api.NPC;
+import net.runelite.api.Player;
+import net.runelite.api.Skill;
+import net.runelite.api.WorldType;
+import net.runelite.api.coords.WorldPoint;
+import net.runelite.api.events.ActorDeath;
+import net.runelite.api.events.GameStateChanged;
+import net.runelite.api.events.GameTick;
+import net.runelite.api.events.HitsplatApplied;
+import net.runelite.api.events.ItemContainerChanged;
+import net.runelite.api.events.StatChanged;
+import net.runelite.api.gameval.InventoryID;
+import net.runelite.api.gameval.VarPlayerID;
+import net.runelite.api.gameval.VarbitID;
+import net.runelite.client.Notifier;
+import net.runelite.client.callback.ClientThread;
+import net.runelite.client.config.ConfigManager;
+import net.runelite.client.eventbus.Subscribe;
+import net.runelite.client.events.ConfigChanged;
+import net.runelite.client.events.RuneScapeProfileChanged;
+import net.runelite.client.plugins.Plugin;
+import net.runelite.client.plugins.PluginDescriptor;
+import net.runelite.client.ui.ClientToolbar;
+import net.runelite.client.ui.NavigationButton;
+import net.runelite.client.ui.overlay.OverlayManager;
+
+@PluginDescriptor(
+	name = "Codex Guardian",
+	description = "A companion for one-life accounts: risk warnings, supply checks, a run journal and death-risk stats",
+	tags = {"hardcore", "hcim", "safety", "risk", "warning", "journal", "death", "codex"}
+)
+public class CodexGuardianPlugin extends Plugin
+{
+	private static final String JOURNAL_KEY = "journal";
+	/** Save the journal about once a minute while playing, and at every important moment. */
+	private static final int SAVE_TICKS = 100;
+	/** The journal's run time and danger time tick constantly; send the panel a fresh copy every half minute. */
+	private static final int JOURNAL_PUBLISH_TICKS = 50;
+	/** About ten seconds. */
+	private static final int BRIEFING_TICKS = 17;
+	private static final int PERIL_NOTIFY_COOLDOWN_TICKS = 25;
+	private static final int VENOM_THRESHOLD = 1_000_000;
+	private static final EnumSet<WorldType> PVP_WORLDS = EnumSet.of(WorldType.PVP, WorldType.HIGH_RISK, WorldType.DEADMAN);
+
+	@Inject
+	private Client client;
+
+	@Inject
+	private ClientThread clientThread;
+
+	@Inject
+	private ClientToolbar clientToolbar;
+
+	@Inject
+	private OverlayManager overlayManager;
+
+	@Inject
+	private ConfigManager configManager;
+
+	@Inject
+	private Notifier notifier;
+
+	@Inject
+	private Gson gson;
+
+	@Inject
+	private CodexGuardianConfig config;
+
+	@Inject
+	private PerilVignette vignette;
+
+	private final WardOverlay overlay = new WardOverlay();
+	private final DamageLog damage = new DamageLog();
+	private final CloseCallWatch closeCalls = new CloseCallWatch();
+	private final Map<Skill, Integer> levels = new EnumMap<>(Skill.class);
+
+	private PerilAssessor assessor;
+	private GuardianPanel panel;
+	private NavigationButton navButton;
+
+	private Journal journal;
+	private String journalProfile;
+	private boolean journalChanged;
+	private int ticksSinceSave;
+	private int ticksSincePublish;
+
+	private Situation situation = Situation.loggedOut();
+	private Peril peril = Peril.calm();
+	private Situation shownSituation;
+	private Peril.Level shownLevel;
+	private int shownScore = -1;
+	private Readiness readiness = Readiness.empty();
+	private boolean readinessDirty = true;
+	private int readinessMaxHp;
+
+	private String lastZoneName;
+	private Zone briefingZone;
+	private int briefingTicks;
+	private Peril.Level lastLevel = Peril.Level.CALM;
+	private int perilCooldown;
+	private boolean lowHitpointsNotified;
+	private String lastHitSource;
+	private int accountType = -1;
+	private int lastCombatLevel = -1;
+	/** False until the first tick after login, so the stats the game sends on login are not read as level ups. */
+	private boolean settled;
+
+	@Provides
+	CodexGuardianConfig provideConfig(ConfigManager configManager)
+	{
+		return configManager.getConfig(CodexGuardianConfig.class);
+	}
+
+	@Override
+	protected void startUp()
+	{
+		assessor = new PerilAssessor(config.foodReserve());
+		panel = new GuardianPanel(config.foodReserve(), () -> clientThread.invokeLater(this::newRun));
+		navButton = NavigationButton.builder()
+			.tooltip("Codex Guardian")
+			.icon(Shield.icon(16))
+			.priority(7)
+			.panel(panel)
+			.build();
+		clientToolbar.addNavigation(navButton);
+		overlayManager.add(overlay);
+		overlayManager.add(vignette);
+		clientThread.invokeLater(() ->
+		{
+			if (client.getGameState() == GameState.LOGGED_IN)
+			{
+				loadJournal();
+			}
+		});
+	}
+
+	@Override
+	protected void shutDown()
+	{
+		clientThread.invokeLater(() ->
+		{
+			saveJournal();
+			journal = null;
+			journalProfile = null;
+		});
+		overlayManager.remove(overlay);
+		overlayManager.remove(vignette);
+		clientToolbar.removeNavigation(navButton);
+		overlay.setView(null);
+		vignette.setActive(false);
+		panel = null;
+		resetSession();
+	}
+
+	private void resetSession()
+	{
+		damage.clear();
+		closeCalls.reset();
+		levels.clear();
+		situation = Situation.loggedOut();
+		peril = Peril.calm();
+		shownSituation = null;
+		shownLevel = null;
+		shownScore = -1;
+		readinessDirty = true;
+		lastZoneName = null;
+		briefingZone = null;
+		briefingTicks = 0;
+		lastLevel = Peril.Level.CALM;
+		lowHitpointsNotified = false;
+		lastHitSource = null;
+		accountType = -1;
+		lastCombatLevel = -1;
+		settled = false;
+	}
+
+	@Subscribe
+	public void onGameStateChanged(GameStateChanged event)
+	{
+		GameState state = event.getGameState();
+		if (state == GameState.CONNECTION_LOST)
+		{
+			if (journal != null && situation.isLoggedIn() && (peril.getLevel().atLeast(Peril.Level.DANGER) || !situation.getAttackers().isEmpty()))
+			{
+				journal.disconnect(place(situation), System.currentTimeMillis());
+				journalChanged = true;
+				saveJournal();
+			}
+		}
+		else if (state == GameState.LOGIN_SCREEN || state == GameState.HOPPING)
+		{
+			saveJournal();
+			resetSession();
+			overlay.setView(null);
+			vignette.setActive(false);
+			publishSituation(Situation.loggedOut(), Peril.calm());
+		}
+		else if (state == GameState.LOGGED_IN)
+		{
+			readinessDirty = true;
+		}
+	}
+
+	@Subscribe
+	public void onRuneScapeProfileChanged(RuneScapeProfileChanged event)
+	{
+		saveJournal();
+		journal = null;
+		journalProfile = null;
+		if (client.getGameState() == GameState.LOGGED_IN)
+		{
+			loadJournal();
+		}
+	}
+
+	@Subscribe
+	public void onConfigChanged(ConfigChanged event)
+	{
+		if (!CodexGuardianConfig.GROUP.equals(event.getGroup()) || JOURNAL_KEY.equals(event.getKey()))
+		{
+			return;
+		}
+		assessor = new PerilAssessor(config.foodReserve());
+		GuardianPanel target = panel;
+		if (target != null)
+		{
+			int reserve = config.foodReserve();
+			SwingUtilities.invokeLater(() -> target.setFoodReserve(reserve));
+		}
+		shownSituation = null;
+	}
+
+	@Subscribe
+	public void onItemContainerChanged(ItemContainerChanged event)
+	{
+		if (event.getContainerId() == InventoryID.INV || event.getContainerId() == InventoryID.WORN)
+		{
+			readinessDirty = true;
+		}
+	}
+
+	@Subscribe
+	public void onStatChanged(StatChanged event)
+	{
+		Skill skill = event.getSkill();
+		int level = event.getLevel();
+		Integer previous = levels.put(skill, level);
+		if (!settled || previous == null || level <= previous || journal == null)
+		{
+			return;
+		}
+		if (level == 99 || level >= 50 && level % 10 == 0)
+		{
+			journal.milestone("Reached " + level + " " + skill.getName(), level == 99 ? "A skill mastered on one life" : null,
+				System.currentTimeMillis());
+			journalChanged = true;
+		}
+	}
+
+	@Subscribe
+	public void onHitsplatApplied(HitsplatApplied event)
+	{
+		Player local = client.getLocalPlayer();
+		if (local == null || event.getActor() != local)
+		{
+			return;
+		}
+		Hitsplat hitsplat = event.getHitsplat();
+		int amount = hitsplat.getAmount();
+		if (amount <= 0 || !damagesHitpoints(hitsplat.getHitsplatType()))
+		{
+			return;
+		}
+		damage.hit(amount);
+		String source = sourceOf(hitsplat.getHitsplatType(), local);
+		lastHitSource = source;
+		if (journal != null)
+		{
+			journal.damage(source, amount, place(situation), System.currentTimeMillis());
+		}
+	}
+
+	@Subscribe
+	public void onActorDeath(ActorDeath event)
+	{
+		if (event.getActor() != client.getLocalPlayer() || journal == null)
+		{
+			return;
+		}
+		journal.death(place(situation), lastHitSource, situation.isOneLife(), System.currentTimeMillis());
+		journalChanged = true;
+		closeCalls.reset();
+		damage.clear();
+		saveJournal();
+		publishJournal();
+	}
+
+	@Subscribe
+	public void onGameTick(GameTick tick)
+	{
+		Player local = client.getLocalPlayer();
+		if (client.getGameState() != GameState.LOGGED_IN || local == null)
+		{
+			return;
+		}
+		if (journal == null)
+		{
+			loadJournal();
+		}
+		long now = System.currentTimeMillis();
+		damage.tick();
+
+		Situation s = read(local);
+		Peril p = assessor.assess(s);
+		situation = s;
+		peril = p;
+
+		if (journal != null)
+		{
+			journal.tick(p.getLevel().atLeast(Peril.Level.DANGER));
+			watchStatus(now);
+			watchZone(s, now);
+			watchCloseCall(s, now);
+			watchCombatLevel(s, now);
+		}
+		alert(s, p);
+		updateOverlays(s, p);
+		publishSituation(s, p);
+
+		ticksSincePublish++;
+		if (journalChanged || ticksSincePublish >= JOURNAL_PUBLISH_TICKS)
+		{
+			publishJournal();
+		}
+		ticksSinceSave++;
+		if (ticksSinceSave >= SAVE_TICKS)
+		{
+			saveJournal();
+		}
+		settled = true;
+	}
+
+	/** Reads this tick's situation from the client. */
+	private Situation read(Player local)
+	{
+		int maxHp = client.getRealSkillLevel(Skill.HITPOINTS);
+		Situation.Builder b = new Situation.Builder()
+			.loggedIn(true)
+			.playerName(local.getName())
+			.world(client.getWorld())
+			.combatLevel(local.getCombatLevel())
+			.hitpoints(client.getBoostedSkillLevel(Skill.HITPOINTS), maxHp)
+			.prayer(client.getBoostedSkillLevel(Skill.PRAYER), client.getRealSkillLevel(Skill.PRAYER));
+
+		int type = client.getVarbitValue(VarbitID.IRONMAN);
+		boolean hardcore = type == 3 || type == 5;
+		String mode = modeName(type);
+		if (!hardcore && config.oneLife())
+		{
+			b.mode("One-life account", true);
+		}
+		else
+		{
+			b.mode(mode, hardcore);
+		}
+
+		int poison = client.getVarpValue(VarPlayerID.POISON);
+		b.toxin(poison >= VENOM_THRESHOLD ? Situation.Toxin.VENOM : poison > 0 ? Situation.Toxin.POISON : Situation.Toxin.NONE);
+
+		WorldPoint where = location(local);
+		boolean inWilderness = client.getVarbitValue(VarbitID.INSIDE_WILDERNESS) == 1;
+		int wild = inWilderness && where != null ? Math.max(1, Zones.wildernessLevel(where.getX(), where.getY())) : 0;
+		Zone zone = where == null ? null : Zones.forRegion(where.getRegionID());
+		if (wild > 0)
+		{
+			Zone wilderness = Zones.wilderness(wild);
+			if (zone == null || !zone.getRisk().atLeast(wilderness.getRisk()))
+			{
+				zone = wilderness;
+			}
+		}
+		else if (!Collections.disjoint(client.getWorldType(), PVP_WORLDS) && (zone == null || !zone.getRisk().atLeast(Risk.HIGH)))
+		{
+			zone = Zones.pvpWorld();
+		}
+		b.zone(zone).wilderness(wild, !inWilderness && where != null && Zones.nearWilderness(where.getX(), where.getY()));
+		b.multiCombat(client.getVarbitValue(VarbitID.MULTIWAY_INDICATOR) == 1);
+
+		for (NPC npc : client.getNpcs())
+		{
+			if (npc.getInteracting() == local && !npc.isDead() && npc.getCombatLevel() > 0)
+			{
+				b.attacker(new Threat(npc.getName(), npc.getCombatLevel(), false));
+			}
+		}
+		// Outside PvP areas other players "interact" with you just by following or trading.
+		if (wild > 0 || zone != null && zone.getKind() == Zone.Kind.PVP_WORLD)
+		{
+			for (Player other : client.getPlayers())
+			{
+				if (other != local && other.getInteracting() == local)
+				{
+					b.attacker(new Threat(other.getName(), other.getCombatLevel(), true));
+				}
+			}
+		}
+		b.damage(damage.pace(), damage.recentMaxHit());
+
+		if (readinessDirty || maxHp != readinessMaxHp)
+		{
+			readiness = Supplies.assess(items(InventoryID.INV), items(InventoryID.WORN), maxHp);
+			readinessDirty = false;
+			readinessMaxHp = maxHp;
+		}
+		b.readiness(readiness);
+		return b.build();
+	}
+
+	private WorldPoint location(Player local)
+	{
+		if (client.getTopLevelWorldView().isInstance() && local.getLocalLocation() != null)
+		{
+			return WorldPoint.fromLocalInstance(client, local.getLocalLocation());
+		}
+		return local.getWorldLocation();
+	}
+
+	private List<Supplies.Item> items(int containerId)
+	{
+		List<Supplies.Item> list = new ArrayList<>();
+		ItemContainer container = client.getItemContainer(containerId);
+		if (container == null)
+		{
+			return list;
+		}
+		for (Item item : container.getItems())
+		{
+			if (item == null || item.getId() < 0 || item.getQuantity() <= 0)
+			{
+				continue;
+			}
+			ItemComposition def = client.getItemDefinition(item.getId());
+			// A noted item cannot be eaten or worn, so it saves no one.
+			if (def.getNote() != -1)
+			{
+				continue;
+			}
+			list.add(new Supplies.Item(def.getName(), item.getQuantity()));
+		}
+		return list;
+	}
+
+	private static String modeName(int type)
+	{
+		switch (type)
+		{
+			case 1:
+				return "Ironman";
+			case 2:
+				return "Ultimate Ironman";
+			case 3:
+				return "Hardcore Ironman";
+			case 4:
+				return "Group Ironman";
+			case 5:
+				return "Hardcore Group Ironman";
+			case 6:
+				return "Unranked Group Ironman";
+			default:
+				return "Standard account";
+		}
+	}
+
+	private static boolean damagesHitpoints(int type)
+	{
+		switch (type)
+		{
+			case HitsplatID.HEAL:
+			case HitsplatID.BLOCK_ME:
+			case HitsplatID.BLOCK_OTHER:
+			case HitsplatID.PRAYER_DRAIN:
+			case HitsplatID.SANITY_DRAIN:
+			case HitsplatID.SANITY_RESTORE:
+			case HitsplatID.CYAN_UP:
+			case HitsplatID.CYAN_DOWN:
+			case HitsplatID.DISEASE_BLOCKED:
+				return false;
+			default:
+				return true;
+		}
+	}
+
+	/** Who or what a hit on you came from: the toxin, or the strongest thing attacking you. */
+	private String sourceOf(int type, Player local)
+	{
+		switch (type)
+		{
+			case HitsplatID.POISON:
+				return "Poison";
+			case HitsplatID.VENOM:
+				return "Venom";
+			case HitsplatID.DISEASE:
+				return "Disease";
+			case HitsplatID.BURN:
+				return "Burn";
+			case HitsplatID.BLEED:
+				return "Bleed";
+			default:
+				break;
+		}
+		Actor strongest = null;
+		for (NPC npc : client.getNpcs())
+		{
+			if (npc.getInteracting() == local && (strongest == null || npc.getCombatLevel() > strongest.getCombatLevel()))
+			{
+				strongest = npc;
+			}
+		}
+		if (strongest == null)
+		{
+			for (Player other : client.getPlayers())
+			{
+				if (other != local && other.getInteracting() == local)
+				{
+					return "A player";
+				}
+			}
+		}
+		return strongest == null || strongest.getName() == null ? "Unseen" : strongest.getName();
+	}
+
+	private void watchStatus(long now)
+	{
+		int type = client.getVarbitValue(VarbitID.IRONMAN);
+		// Losing hardcore turns HCIM (3) into a regular ironman (1) and HCGIM (5) into a group ironman (4).
+		if (accountType == 3 && type == 1 || accountType == 5 && type == 4)
+		{
+			journal.statusLost(now);
+			journalChanged = true;
+			saveJournal();
+		}
+		accountType = type;
+	}
+
+	private void watchZone(Situation s, long now)
+	{
+		Zone zone = s.getZone();
+		String name = zone == null ? null : zone.getName();
+		if (Objects.equals(name, lastZoneName))
+		{
+			return;
+		}
+		lastZoneName = name;
+		// The place you log in to is not somewhere you walked into.
+		if (zone == null || !settled)
+		{
+			return;
+		}
+		boolean risky = zone.getRisk().atLeast(Risk.MEDIUM) || zone.getKind() == Zone.Kind.WILDERNESS
+			|| zone.getRisk() == Risk.SAFE;
+		if (risky && config.briefings())
+		{
+			briefingZone = zone;
+			briefingTicks = BRIEFING_TICKS;
+		}
+		if (journal.zone(zone, now))
+		{
+			journalChanged = true;
+		}
+		if (config.notifyZone() && (zone.getRisk().atLeast(Risk.HIGH) || zone.getKind() == Zone.Kind.WILDERNESS))
+		{
+			notifier.notify("Guardian: entering " + zone.getName() + " (" + zone.getRisk().getLabel().toLowerCase() + " risk)");
+		}
+	}
+
+	private void watchCloseCall(Situation s, long now)
+	{
+		CloseCallWatch.Result r = closeCalls.update(s.getHitpoints(), s.getMaxHitpoints(), config.closeCallPercent(), place(s), strongestName(s));
+		if (r != null)
+		{
+			journal.closeCall(r.lowest, s.getMaxHitpoints(), r.place, r.source, now);
+			journalChanged = true;
+		}
+	}
+
+	private void watchCombatLevel(Situation s, long now)
+	{
+		int level = s.getCombatLevel();
+		if (settled && lastCombatLevel > 0 && level > lastCombatLevel && (level % 10 == 0 || level == 126))
+		{
+			journal.milestone("Combat level " + level, null, now);
+			journalChanged = true;
+		}
+		lastCombatLevel = level;
+	}
+
+	private static String strongestName(Situation s)
+	{
+		Threat strongest = null;
+		for (Threat t : s.getAttackers())
+		{
+			if (strongest == null || t.getCombatLevel() > strongest.getCombatLevel())
+			{
+				strongest = t;
+			}
+		}
+		return strongest == null ? null : strongest.isPlayer() ? "a player" : strongest.getName();
+	}
+
+	private static String place(Situation s)
+	{
+		Zone zone = s.getZone();
+		if (zone == null)
+		{
+			return null;
+		}
+		return zone.getKind() == Zone.Kind.WILDERNESS ? "Wilderness level " + s.getWildernessLevel() : zone.getName();
+	}
+
+	private void alert(Situation s, Peril p)
+	{
+		Peril.Level level = p.getLevel();
+		if (perilCooldown > 0)
+		{
+			perilCooldown--;
+		}
+		boolean notified = false;
+		if (level == Peril.Level.PERIL && lastLevel != Peril.Level.PERIL && perilCooldown == 0 && config.notifyPeril())
+		{
+			notifier.notify("Guardian: peril. " + p.headline());
+			perilCooldown = PERIL_NOTIFY_COOLDOWN_TICKS;
+			notified = true;
+		}
+		lastLevel = level;
+
+		int max = Math.max(1, s.getMaxHitpoints());
+		int percent = s.getHitpoints() * 100 / max;
+		int threshold = config.lowHitpointsPercent();
+		if (percent <= threshold)
+		{
+			if (!lowHitpointsNotified && !notified && config.notifyLowHitpoints())
+			{
+				notifier.notify("Guardian: hitpoints low (" + s.getHitpoints() + "/" + s.getMaxHitpoints() + ")");
+			}
+			lowHitpointsNotified = true;
+		}
+		else if (percent > threshold + 10)
+		{
+			lowHitpointsNotified = false;
+		}
+	}
+
+	private void updateOverlays(Situation s, Peril p)
+	{
+		vignette.setActive(config.perilVignette() && p.getLevel() == Peril.Level.PERIL);
+
+		WardOverlay.Briefing briefing = null;
+		if (briefingTicks > 0)
+		{
+			briefingTicks--;
+			if (briefingZone != null && briefingZone.getName().equals(s.getZone() == null ? null : s.getZone().getName()))
+			{
+				briefing = briefing(s, s.getZone());
+			}
+		}
+
+		boolean showPlaque;
+		switch (config.plaqueMode())
+		{
+			case ALWAYS:
+				showPlaque = true;
+				break;
+			case WARY:
+				showPlaque = p.getLevel().atLeast(Peril.Level.WARY);
+				break;
+			case DANGER:
+				showPlaque = p.getLevel().atLeast(Peril.Level.DANGER);
+				break;
+			default:
+				showPlaque = false;
+		}
+		Readiness r = s.getReadiness();
+		String supplies = r.getFoodCount() == 0 ? "No food" : r.getFoodCount() + " food  " + r.getFoodHealing() + " hp";
+		boolean escapeOk = r.canEscapeAt(s.getWildernessLevel());
+		String escape = escapeOk ? shortName(r.getBestEscape()) : r.hasEscape() ? "Teleport blocked" : "No way out";
+		overlay.setView(new WardOverlay.View(p.getLevel(), s.getHitpoints(), s.getMaxHitpoints(), supplies, escape, escapeOk,
+			showPlaque, briefing));
+	}
+
+	private WardOverlay.Briefing briefing(Situation s, Zone zone)
+	{
+		List<WardOverlay.Check> checks = new ArrayList<>();
+		if (zone.getRisk() == Risk.SAFE)
+		{
+			checks.add(new WardOverlay.Check(Mark.Kind.GOOD, "Deaths here are normally safe"));
+		}
+		else
+		{
+			Readiness r = s.getReadiness();
+			int reserve = config.foodReserve();
+			checks.add(new WardOverlay.Check(r.getFoodCount() == 0 ? Mark.Kind.BAD : r.getFoodHealing() >= reserve ? Mark.Kind.GOOD : Mark.Kind.WARN,
+				r.getFoodCount() == 0 ? "No food" : r.getFoodCount() + " food, " + r.getFoodHealing() + " hp"));
+			int wild = s.getWildernessLevel();
+			checks.add(new WardOverlay.Check(r.canEscapeAt(wild) ? Mark.Kind.GOOD : Mark.Kind.BAD,
+				r.canEscapeAt(wild) ? shortName(r.getBestEscape()) : r.hasEscape() ? "Teleports blocked here" : "No teleport"));
+			List<String> graces = r.getSavingGraces();
+			checks.add(new WardOverlay.Check(graces.isEmpty() ? Mark.Kind.NONE : Mark.Kind.GOOD,
+				graces.isEmpty() ? "No saving grace" : graces.get(0)));
+		}
+		String risk = zone.getKind() == Zone.Kind.WILDERNESS ? "LEVEL " + s.getWildernessLevel() : zone.getRisk().getLabel().toUpperCase() + " RISK";
+		return new WardOverlay.Briefing(zone.getName(), risk, Theme.risk(zone.getRisk()), checks);
+	}
+
+	private static String shortName(String item)
+	{
+		if (item == null)
+		{
+			return "";
+		}
+		return item.replace("Amulet of eternal glory", "Eternal glory").replace("Amulet of glory", "Glory")
+			.replace("Ring of dueling", "Dueling").replace(" teleport", " tab");
+	}
+
+	/** Sends the live read to the panel, but only when something it shows has changed. */
+	private void publishSituation(Situation s, Peril p)
+	{
+		if (s.equals(shownSituation) && p.getLevel() == shownLevel && p.getScore() == shownScore)
+		{
+			return;
+		}
+		shownSituation = s;
+		shownLevel = p.getLevel();
+		shownScore = p.getScore();
+		GuardianPanel target = panel;
+		if (target != null)
+		{
+			SwingUtilities.invokeLater(() -> target.update(s, p));
+		}
+	}
+
+	/** Hands the panel a private copy of the journal, so Swing never reads it while the game writes it. */
+	private void publishJournal()
+	{
+		ticksSincePublish = 0;
+		journalChanged = false;
+		GuardianPanel target = panel;
+		if (target == null)
+		{
+			return;
+		}
+		Journal copy = journal == null ? null : gson.fromJson(gson.toJson(journal), Journal.class).repair();
+		SwingUtilities.invokeLater(() -> target.updateJournal(copy));
+	}
+
+	private void loadJournal()
+	{
+		String profile = configManager.getRSProfileKey();
+		if (profile == null)
+		{
+			return;
+		}
+		Journal loaded = null;
+		String json = configManager.getConfiguration(CodexGuardianConfig.GROUP, profile, JOURNAL_KEY);
+		if (json != null && !json.isEmpty())
+		{
+			try
+			{
+				loaded = gson.fromJson(json, Journal.class);
+			}
+			catch (RuntimeException e)
+			{
+				loaded = null;
+			}
+		}
+		journal = loaded == null ? Journal.fresh(System.currentTimeMillis()) : loaded.repair();
+		journalProfile = profile;
+		journalChanged = true;
+		if (loaded == null)
+		{
+			saveJournal();
+		}
+		publishJournal();
+	}
+
+	private void saveJournal()
+	{
+		ticksSinceSave = 0;
+		if (journal == null || journalProfile == null)
+		{
+			return;
+		}
+		configManager.setConfiguration(CodexGuardianConfig.GROUP, journalProfile, JOURNAL_KEY, gson.toJson(journal));
+	}
+
+	private void newRun()
+	{
+		if (journalProfile == null)
+		{
+			return;
+		}
+		journal = Journal.fresh(System.currentTimeMillis());
+		closeCalls.reset();
+		saveJournal();
+		publishJournal();
+	}
+}

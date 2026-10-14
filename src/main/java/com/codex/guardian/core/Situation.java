@@ -1,0 +1,324 @@
+package com.codex.guardian.core;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Objects;
+
+/**
+ * Everything Guardian knows about this moment, read once per game tick on the client thread
+ * and then handed to the assessor, the panel and the overlays without touching the game again.
+ */
+public final class Situation
+{
+	public enum Toxin
+	{
+		NONE,
+		POISON,
+		VENOM
+	}
+
+	private final boolean loggedIn;
+	private final String playerName;
+	private final String mode;
+	private final boolean oneLife;
+	private final int world;
+	private final int combatLevel;
+	private final int hitpoints;
+	private final int maxHitpoints;
+	private final int prayer;
+	private final int maxPrayer;
+	private final Toxin toxin;
+	private final Zone zone;
+	private final int wildernessLevel;
+	private final boolean nearWilderness;
+	private final boolean multiCombat;
+	private final List<Threat> attackers;
+	private final double damagePerTick;
+	private final int recentMaxHit;
+	private final Readiness readiness;
+
+	private Situation(Builder b)
+	{
+		loggedIn = b.loggedIn;
+		playerName = b.playerName;
+		mode = b.mode;
+		oneLife = b.oneLife;
+		world = b.world;
+		combatLevel = b.combatLevel;
+		hitpoints = b.hitpoints;
+		maxHitpoints = b.maxHitpoints;
+		prayer = b.prayer;
+		maxPrayer = b.maxPrayer;
+		toxin = b.toxin;
+		zone = b.zone;
+		wildernessLevel = b.wildernessLevel;
+		nearWilderness = b.nearWilderness;
+		multiCombat = b.multiCombat;
+		attackers = Collections.unmodifiableList(new ArrayList<>(b.attackers));
+		damagePerTick = b.damagePerTick;
+		recentMaxHit = b.recentMaxHit;
+		readiness = b.readiness;
+	}
+
+	public static Situation loggedOut()
+	{
+		return new Builder().build();
+	}
+
+	public boolean isLoggedIn()
+	{
+		return loggedIn;
+	}
+
+	public String getPlayerName()
+	{
+		return playerName;
+	}
+
+	/** A short name for the account type, such as "Hardcore Ironman". */
+	public String getMode()
+	{
+		return mode;
+	}
+
+	public boolean isOneLife()
+	{
+		return oneLife;
+	}
+
+	public int getWorld()
+	{
+		return world;
+	}
+
+	public int getCombatLevel()
+	{
+		return combatLevel;
+	}
+
+	public int getHitpoints()
+	{
+		return hitpoints;
+	}
+
+	public int getMaxHitpoints()
+	{
+		return maxHitpoints;
+	}
+
+	public double hitpointsFraction()
+	{
+		return maxHitpoints <= 0 ? 1 : Math.max(0, Math.min(1, hitpoints / (double) maxHitpoints));
+	}
+
+	public int getPrayer()
+	{
+		return prayer;
+	}
+
+	public int getMaxPrayer()
+	{
+		return maxPrayer;
+	}
+
+	public Toxin getToxin()
+	{
+		return toxin;
+	}
+
+	/** The named place you are in, or null for ordinary ground. */
+	public Zone getZone()
+	{
+		return zone;
+	}
+
+	public int getWildernessLevel()
+	{
+		return wildernessLevel;
+	}
+
+	public boolean isNearWilderness()
+	{
+		return nearWilderness;
+	}
+
+	public boolean isMultiCombat()
+	{
+		return multiCombat;
+	}
+
+	public List<Threat> getAttackers()
+	{
+		return attackers;
+	}
+
+	/** Average damage taken per game tick over the last few ticks. */
+	public double getDamagePerTick()
+	{
+		return damagePerTick;
+	}
+
+	/** The biggest single hit taken in the last half minute or so. */
+	public int getRecentMaxHit()
+	{
+		return recentMaxHit;
+	}
+
+	public Readiness getReadiness()
+	{
+		return readiness;
+	}
+
+	public Risk risk()
+	{
+		return zone == null ? Risk.LOW : zone.getRisk();
+	}
+
+	/** True when anything around you is trying to hurt you or the place itself is dangerous. */
+	public boolean inHarmsWay()
+	{
+		return !attackers.isEmpty() || damagePerTick > 0 || risk().atLeast(Risk.MEDIUM);
+	}
+
+	@Override
+	public boolean equals(Object o)
+	{
+		if (!(o instanceof Situation))
+		{
+			return false;
+		}
+		Situation s = (Situation) o;
+		return loggedIn == s.loggedIn && oneLife == s.oneLife && world == s.world && combatLevel == s.combatLevel
+			&& hitpoints == s.hitpoints && maxHitpoints == s.maxHitpoints && prayer == s.prayer && maxPrayer == s.maxPrayer
+			&& wildernessLevel == s.wildernessLevel && nearWilderness == s.nearWilderness && multiCombat == s.multiCombat
+			&& Double.compare(damagePerTick, s.damagePerTick) == 0 && recentMaxHit == s.recentMaxHit
+			&& Objects.equals(playerName, s.playerName) && Objects.equals(mode, s.mode) && toxin == s.toxin
+			&& Objects.equals(zone, s.zone) && attackers.equals(s.attackers) && Objects.equals(readiness, s.readiness);
+	}
+
+	@Override
+	public int hashCode()
+	{
+		return Objects.hash(loggedIn, playerName, mode, oneLife, world, combatLevel, hitpoints, maxHitpoints, prayer,
+			maxPrayer, toxin, zone, wildernessLevel, nearWilderness, multiCombat, attackers, damagePerTick, recentMaxHit,
+			readiness);
+	}
+
+	public static final class Builder
+	{
+		private boolean loggedIn;
+		private String playerName;
+		private String mode = "Standard account";
+		private boolean oneLife;
+		private int world;
+		private int combatLevel = 3;
+		private int hitpoints = 10;
+		private int maxHitpoints = 10;
+		private int prayer = 1;
+		private int maxPrayer = 1;
+		private Toxin toxin = Toxin.NONE;
+		private Zone zone;
+		private int wildernessLevel;
+		private boolean nearWilderness;
+		private boolean multiCombat;
+		private final List<Threat> attackers = new ArrayList<>();
+		private double damagePerTick;
+		private int recentMaxHit;
+		private Readiness readiness = Readiness.empty();
+
+		public Builder loggedIn(boolean value)
+		{
+			loggedIn = value;
+			return this;
+		}
+
+		public Builder playerName(String value)
+		{
+			playerName = value;
+			return this;
+		}
+
+		public Builder mode(String value, boolean oneLife)
+		{
+			mode = value;
+			this.oneLife = oneLife;
+			return this;
+		}
+
+		public Builder world(int value)
+		{
+			world = value;
+			return this;
+		}
+
+		public Builder combatLevel(int value)
+		{
+			combatLevel = value;
+			return this;
+		}
+
+		public Builder hitpoints(int current, int max)
+		{
+			hitpoints = current;
+			maxHitpoints = max;
+			return this;
+		}
+
+		public Builder prayer(int current, int max)
+		{
+			prayer = current;
+			maxPrayer = max;
+			return this;
+		}
+
+		public Builder toxin(Toxin value)
+		{
+			toxin = value;
+			return this;
+		}
+
+		public Builder zone(Zone value)
+		{
+			zone = value;
+			return this;
+		}
+
+		public Builder wilderness(int level, boolean near)
+		{
+			wildernessLevel = level;
+			nearWilderness = near;
+			return this;
+		}
+
+		public Builder multiCombat(boolean value)
+		{
+			multiCombat = value;
+			return this;
+		}
+
+		public Builder attacker(Threat threat)
+		{
+			attackers.add(threat);
+			return this;
+		}
+
+		public Builder damage(double perTick, int recentMax)
+		{
+			damagePerTick = perTick;
+			recentMaxHit = recentMax;
+			return this;
+		}
+
+		public Builder readiness(Readiness value)
+		{
+			readiness = value;
+			return this;
+		}
+
+		public Situation build()
+		{
+			return new Situation(this);
+		}
+	}
+}
