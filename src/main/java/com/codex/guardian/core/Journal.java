@@ -265,6 +265,15 @@ public final class Journal
 	/** Notes the first visit to a risky zone. Returns true if an entry was written. */
 	public boolean zone(Zone zone, long now)
 	{
+		return zone(zone, 0, now);
+	}
+
+	/**
+	 * Notes the first visit to a risky zone, with the Wilderness level it was entered at.
+	 * Returns true if an entry was written.
+	 */
+	public boolean zone(Zone zone, int wildernessLevel, long now)
+	{
 		if (zone == null || !zone.getRisk().atLeast(Risk.HIGH) && zone.getKind() != Zone.Kind.WILDERNESS)
 		{
 			return false;
@@ -281,7 +290,10 @@ public final class Journal
 				return false;
 			}
 		}
-		add(now, Type.ZONE, zone.getName(), zone.kindLabel() + "  ·  " + zone.getRisk().getLabel() + " risk");
+		String kind = zone.getKind() == Zone.Kind.WILDERNESS
+			? wildernessLevel > 0 ? "Entered at level " + wildernessLevel : "Other players can attack you"
+			: zone.kindLabel();
+		add(now, Type.ZONE, zone.getName(), kind + "  ·  " + zone.getRisk().getLabel() + " risk");
 		return true;
 	}
 

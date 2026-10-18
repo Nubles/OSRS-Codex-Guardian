@@ -6,6 +6,7 @@ import java.awt.GridLayout;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import javax.swing.JComponent;
 import javax.swing.JPanel;
 import javax.swing.border.EmptyBorder;
 
@@ -54,28 +55,36 @@ final class PerilsView
 			{
 				total += v;
 			}
+			List<JComponent> rows = new ArrayList<>();
 			for (Map.Entry<String, Integer> e : sources)
 			{
-				stack.add(bar(e.getKey(), e.getValue(), max, total));
+				rows.add(bar(e.getKey(), e.getValue(), max, total));
 			}
+			stack.add(Rows.ledger(rows));
 		}
 
 		List<Map.Entry<String, Integer>> places = top(journal.getCloseCallsByPlace(), 5);
 		if (!places.isEmpty())
 		{
 			stack.add(new SectionHeader("Where it got close"));
+			List<JComponent> rows = new ArrayList<>();
 			for (Map.Entry<String, Integer> e : places)
 			{
-				stack.add(Rows.check(Mark.Kind.WARN, e.getKey(), null, e.getValue() + (e.getValue() == 1 ? " time" : " times")));
+				rows.add(Rows.fact(Mark.Kind.WARN, e.getKey(), e.getValue() + (e.getValue() == 1 ? " time" : " times"), Theme.EMBER));
 			}
+			stack.add(Rows.ledger(rows));
 		}
 
-		if (journal.getDeaths() > 0 || journal.getDisconnects() > 0)
+		if (journal.getDeaths() > 0 || journal.getDisconnects() > 0 || journal.getSafeDeaths() > 0)
 		{
 			stack.add(new SectionHeader("Scars"));
 			if (journal.getDeaths() > 0)
 			{
 				stack.add(Rows.check(Mark.Kind.BAD, "Deaths", null, String.valueOf(journal.getDeaths())));
+			}
+			if (journal.getSafeDeaths() > 0)
+			{
+				stack.add(Rows.check(Mark.Kind.NOTE, "Safe deaths", "In minigames, at no cost", String.valueOf(journal.getSafeDeaths())));
 			}
 			if (journal.getDisconnects() > 0)
 			{
@@ -85,19 +94,21 @@ final class PerilsView
 		return stack;
 	}
 
-	private static Card bar(String name, int value, int max, int total)
+	private static JComponent bar(String name, int value, int max, int total)
 	{
-		Card card = new Card(new BorderLayout(0, 3));
-		card.setBorder(new EmptyBorder(6, 10, 7, 10));
+		JPanel card = new JPanel(new BorderLayout(0, 3));
+		card.setOpaque(false);
+		card.setBorder(new EmptyBorder(6, 0, 7, 0));
 		JPanel line = new JPanel(new BorderLayout());
 		line.setOpaque(false);
 		line.add(Ui.label(name, Theme.body(), Theme.TEXT), BorderLayout.CENTER);
 		int share = total <= 0 ? 0 : (int) Math.round(value * 100.0 / total);
 		line.add(Ui.label(value + " dmg  ·  " + share + "%", Theme.small(), Theme.TEXT_MUTED), BorderLayout.EAST);
 		card.add(line, BorderLayout.CENTER);
-		ProgressBar bar = new ProgressBar(4);
+		ProgressBar bar = new ProgressBar(4).ramp(Theme.mix(Theme.EMBER, Theme.GOLD_DIM, 0.4), Theme.BLOOD);
 		bar.setProgress(value / (double) Math.max(1, max), false, false);
 		card.add(bar, BorderLayout.SOUTH);
+		card.setMaximumSize(new java.awt.Dimension(Integer.MAX_VALUE, card.getPreferredSize().height));
 		return card;
 	}
 

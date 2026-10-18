@@ -41,6 +41,8 @@ public class GuardianPanel extends PluginPanel
 	private Journal journal;
 	private int foodReserve;
 	private boolean confirming;
+	private boolean active;
+	private boolean wardStale;
 
 	/** @param onNewRun called on the Swing thread once the player confirms a fresh run */
 	public GuardianPanel(int foodReserve, Runnable onNewRun)
@@ -93,7 +95,31 @@ public class GuardianPanel extends PluginPanel
 		this.situation = situation;
 		this.peril = peril;
 		crest.update(situation, peril, journal);
-		rebuildWard();
+		// In a fight the read changes every tick; rebuilding a page nobody is looking at is wasted work.
+		if (active || isShowing())
+		{
+			rebuildWard();
+		}
+		else
+		{
+			wardStale = true;
+		}
+	}
+
+	@Override
+	public void onActivate()
+	{
+		active = true;
+		if (wardStale)
+		{
+			rebuildWard();
+		}
+	}
+
+	@Override
+	public void onDeactivate()
+	{
+		active = false;
 	}
 
 	/** Called on the Swing thread with a private copy of the journal whenever it changes. */
@@ -112,6 +138,7 @@ public class GuardianPanel extends PluginPanel
 
 	private void rebuildWard()
 	{
+		wardStale = false;
 		replace(ward, WardView.build(situation, peril, gauge, foodReserve));
 	}
 

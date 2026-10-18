@@ -1,5 +1,6 @@
 package com.codex.guardian;
 
+import com.codex.guardian.core.Advice;
 import com.codex.guardian.core.CloseCallWatch;
 import com.codex.guardian.core.DamageLog;
 import com.codex.guardian.core.Journal;
@@ -645,7 +646,7 @@ public class CodexGuardianPlugin extends Plugin
 		{
 			brief(Briefing.ZONE, zone);
 		}
-		if (journal.zone(zone, now))
+		if (journal.zone(zone, s.getWildernessLevel(), now))
 		{
 			journalChanged = true;
 		}
@@ -809,7 +810,7 @@ public class CodexGuardianPlugin extends Plugin
 		boolean escapeOk = r.canEscapeAt(s.getWildernessLevel());
 		String escape = escapeOk ? shortName(r.getBestEscape()) : r.hasEscape() ? "Teleport blocked" : "No way out";
 		overlay.setView(new WardOverlay.View(p.getLevel(), s.getHitpoints(), s.getMaxHitpoints(), supplies, escape, escapeOk,
-			showPlaque, briefing));
+			showPlaque, briefing, briefing == null ? Advice.now(s, p) : null));
 	}
 
 	/** The briefing for the moment Guardian is announcing, or null once it no longer applies. */
@@ -838,7 +839,7 @@ public class CodexGuardianPlugin extends Plugin
 				String best = shortName(s.getReadiness().getBestEscape());
 				int reach = Math.max(0, s.getReadiness().getEscapeReach());
 				checks.add(new WardOverlay.Check(Mark.Kind.BAD, best + " stops at level " + reach));
-				checks.add(new WardOverlay.Check(Mark.Kind.WARN, "Walk south to level " + reach + " to teleport"));
+				checks.add(new WardOverlay.Check(Mark.Kind.WARN, "Walk south to level " + reach));
 				checks.addAll(kitChecks(s).subList(0, 1));
 				return new WardOverlay.Briefing("LEVEL " + wild, "Past your teleport", "NO ESCAPE", Theme.BLOOD, checks);
 			}
@@ -892,12 +893,7 @@ public class CodexGuardianPlugin extends Plugin
 
 	private static String shortName(String item)
 	{
-		if (item == null)
-		{
-			return "";
-		}
-		return item.replace("Amulet of eternal glory", "Eternal glory").replace("Amulet of glory", "Glory")
-			.replace("Ring of dueling", "Dueling").replace(" teleport", " tab");
+		return Advice.shortName(item);
 	}
 
 	/** Sends the live read to the panel, but only when something it shows has changed. */
