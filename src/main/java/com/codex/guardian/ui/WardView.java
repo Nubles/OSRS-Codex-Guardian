@@ -65,7 +65,7 @@ final class WardView
 		Set<String> seen = new HashSet<>();
 		for (Peril.Reason r : peril.getReasons())
 		{
-			if (rows.size() >= 6 || r.getText().equals(headline) || !seen.add(r.getText()) || saidElsewhere(s, r)
+			if (rows.size() >= 6 || r.getText().equals(headline) || !seen.add(r.getText()) || saidElsewhere(r)
 				|| paceShown && r.getText().startsWith("At this pace"))
 			{
 				continue;
@@ -80,12 +80,10 @@ final class WardView
 		return stack;
 	}
 
-	/** Good news and the place's own risk already have their cards above. */
-	private static boolean saidElsewhere(Situation s, Peril.Reason r)
+	/** The place card and the readiness ledger already carry these, each with its own verdict mark. */
+	private static boolean saidElsewhere(Peril.Reason r)
 	{
-		Zone zone = s.getZone();
-		return r.getTone() == Peril.Tone.GOOD || r.getText().startsWith("Wilderness level")
-			|| zone != null && r.getText().startsWith(zone.getName());
+		return r.getTopic() == Peril.Topic.PLACE || r.getTopic() == Peril.Topic.KIT || r.getTone() == Peril.Tone.GOOD;
 	}
 
 	private static boolean paceShown(Peril peril)

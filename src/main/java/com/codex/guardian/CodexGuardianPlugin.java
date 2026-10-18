@@ -750,7 +750,8 @@ public class CodexGuardianPlugin extends Plugin
 		boolean notified = false;
 		if (level == Peril.Level.PERIL && lastLevel != Peril.Level.PERIL && perilCooldown == 0 && config.notifyPeril())
 		{
-			notifier.notify("Guardian: peril. " + p.headline());
+			String action = Advice.now(s, p);
+			notifier.notify("Guardian: peril. " + p.headline() + (action == null ? "" : ". " + action));
 			perilCooldown = PERIL_NOTIFY_COOLDOWN_TICKS;
 			notified = true;
 		}

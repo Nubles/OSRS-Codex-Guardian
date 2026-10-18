@@ -24,7 +24,7 @@ public class WardCrest extends JPanel
 {
 	private final ShieldGauge shield = new ShieldGauge();
 	private final JLabel name = Ui.label("Guardian", Theme.title(), Theme.GOLD_BRIGHT);
-	private final JLabel mode = Ui.label("Log in and Guardian will keep watch", Theme.small(), Theme.TEXT_MUTED);
+	private final JLabel mode = Ui.label("Not logged in", Theme.small(), Theme.TEXT_MUTED);
 	private final Ledger prayer = new Ledger("Prayer", true);
 	private final Ledger run = new Ledger("This run", false);
 	private final Ledger closeCalls = new Ledger("Close calls", false);
@@ -66,7 +66,7 @@ public class WardCrest extends JPanel
 		level = in ? peril.getLevel() : Peril.Level.CALM;
 		shield.set(s.getHitpoints(), s.getMaxHitpoints(), level, in);
 		name.setText(in && s.getPlayerName() != null ? s.getPlayerName() : "Guardian");
-		mode.setText(in ? s.getMode() : "Log in and Guardian will keep watch");
+		mode.setText(in ? s.getMode() : "Not logged in");
 		mode.setToolTipText(in && s.getWorld() > 0 ? s.getMode() + " on world " + s.getWorld() : null);
 		mode.setForeground(in && s.isOneLife() ? Theme.GOLD : Theme.TEXT_MUTED);
 		if (in)

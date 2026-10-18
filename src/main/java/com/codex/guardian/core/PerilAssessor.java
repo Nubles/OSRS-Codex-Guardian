@@ -36,15 +36,15 @@ public final class PerilAssessor
 		String hpText = s.getHitpoints() + "/" + s.getMaxHitpoints();
 		if (hp <= 0.2)
 		{
-			score += add(reasons, "Hitpoints critical at " + hpText, Peril.Tone.BAD, 45);
+			score += add(reasons, Peril.Topic.VITALS, "Hitpoints critical at " + hpText, Peril.Tone.BAD, 45);
 		}
 		else if (hp <= 0.35)
 		{
-			score += add(reasons, "Hitpoints low at " + hpText, Peril.Tone.BAD, 28);
+			score += add(reasons, Peril.Topic.VITALS, "Hitpoints low at " + hpText, Peril.Tone.BAD, 28);
 		}
 		else if (hp <= 0.5)
 		{
-			score += add(reasons, "Hitpoints under half", Peril.Tone.WARN, 12);
+			score += add(reasons, Peril.Topic.VITALS, "Hitpoints under half", Peril.Tone.WARN, 12);
 		}
 		// Under fire: something is targeting you, or you took damage in the last few ticks.
 		boolean underFire = !s.getAttackers().isEmpty() || s.getDamagePerTick() > 0;
@@ -53,8 +53,8 @@ public final class PerilAssessor
 		if (oneHitAway)
 		{
 			score += underFire
-				? add(reasons, "One more hit of " + worst + " could end the run", Peril.Tone.BAD, 30)
-				: add(reasons, "Eat up: a hit of " + worst + " would end the run", Peril.Tone.WARN, 10);
+				? add(reasons, Peril.Topic.VITALS, "One more hit of " + worst + " could end the run", Peril.Tone.BAD, 30)
+				: add(reasons, Peril.Topic.VITALS, "Eat up: a hit of " + worst + " would end the run", Peril.Tone.WARN, 10);
 		}
 		int secondsLeft = -1;
 		double ticksLeft = Double.POSITIVE_INFINITY;
@@ -64,11 +64,11 @@ public final class PerilAssessor
 			secondsLeft = (int) Math.round(ticksLeft * SECONDS_PER_TICK);
 			if (ticksLeft < LETHAL_PACE_TICKS)
 			{
-				score += add(reasons, "At this pace your hitpoints last about " + secondsLeft + "s", Peril.Tone.BAD, 24);
+				score += add(reasons, Peril.Topic.VITALS, "At this pace your hitpoints last about " + secondsLeft + "s", Peril.Tone.BAD, 24);
 			}
 			else if (ticksLeft < 40)
 			{
-				score += add(reasons, "Taking steady damage", Peril.Tone.WARN, 8);
+				score += add(reasons, Peril.Topic.VITALS, "Taking steady damage", Peril.Tone.WARN, 8);
 			}
 		}
 
@@ -80,13 +80,13 @@ public final class PerilAssessor
 			switch (risk)
 			{
 				case EXTREME:
-					score += add(reasons, zone.getName() + " is one of the deadliest places in the game", Peril.Tone.WARN, 22);
+					score += add(reasons, Peril.Topic.PLACE, zone.getName() + " is one of the deadliest places in the game", Peril.Tone.WARN, 22);
 					break;
 				case HIGH:
-					score += add(reasons, zone.getName() + " is high risk", Peril.Tone.WARN, 15);
+					score += add(reasons, Peril.Topic.PLACE, zone.getName() + " is high risk", Peril.Tone.WARN, 15);
 					break;
 				case MEDIUM:
-					score += add(reasons, zone.getName() + " is medium risk", Peril.Tone.NOTE, 8);
+					score += add(reasons, Peril.Topic.PLACE, zone.getName() + " is medium risk", Peril.Tone.NOTE, 8);
 					break;
 				default:
 					break;
@@ -95,26 +95,26 @@ public final class PerilAssessor
 		int wild = s.getWildernessLevel();
 		if (wild > 0)
 		{
-			score += add(reasons, "Wilderness level " + wild + ": other players can attack you", Peril.Tone.WARN, 10 + Math.min(20, wild / 2));
+			score += add(reasons, Peril.Topic.PLACE, "Wilderness level " + wild + ": other players can attack you", Peril.Tone.WARN, 10 + Math.min(20, wild / 2));
 			if (wild > 30)
 			{
-				score += add(reasons, "Above level 30 no teleport works", Peril.Tone.BAD, 14);
+				score += add(reasons, Peril.Topic.PLACE, "Above level 30 no teleport works", Peril.Tone.BAD, 14);
 			}
 			else if (wild > 20 && !s.getReadiness().canEscapeAt(wild))
 			{
-				score += add(reasons, "Your teleports stop working above level 20", Peril.Tone.BAD, 12);
+				score += add(reasons, Peril.Topic.PLACE, "Your teleports stop working above level 20", Peril.Tone.BAD, 12);
 			}
 		}
 		else if (s.isNearWilderness())
 		{
-			score += add(reasons, "The Wilderness starts just north of you", Peril.Tone.NOTE, 4);
+			score += add(reasons, Peril.Topic.PLACE, "The Wilderness starts just north of you", Peril.Tone.NOTE, 4);
 		}
 
 		// Who is attacking you.
 		List<Threat> attackers = s.getAttackers();
 		if (attackers.size() >= 2)
 		{
-			score += add(reasons, attackers.size() + " attackers on you at once", Peril.Tone.BAD, Math.min(24, 8 * (attackers.size() - 1)));
+			score += add(reasons, Peril.Topic.THREAT, attackers.size() + " attackers on you at once", Peril.Tone.BAD, Math.min(24, 8 * (attackers.size() - 1)));
 		}
 		Threat strongest = null;
 		boolean player = false;
@@ -128,15 +128,15 @@ public final class PerilAssessor
 		}
 		if (player)
 		{
-			score += add(reasons, "A player is attacking you", Peril.Tone.BAD, 18);
+			score += add(reasons, Peril.Topic.THREAT, "A player is attacking you", Peril.Tone.BAD, 18);
 		}
 		if (strongest != null && !strongest.isPlayer() && strongest.getCombatLevel() >= s.getCombatLevel() + 20)
 		{
-			score += add(reasons, strongest.getName() + " (level " + strongest.getCombatLevel() + ") outclasses you", Peril.Tone.WARN, 8);
+			score += add(reasons, Peril.Topic.THREAT, strongest.getName() + " (level " + strongest.getCombatLevel() + ") outclasses you", Peril.Tone.WARN, 8);
 		}
 		if (s.isMultiCombat() && !attackers.isEmpty())
 		{
-			score += add(reasons, "Multi-combat: more can join in", Peril.Tone.NOTE, 4);
+			score += add(reasons, Peril.Topic.THREAT, "Multi-combat: more can join in", Peril.Tone.NOTE, 4);
 		}
 
 		// Poison and venom.
@@ -144,11 +144,11 @@ public final class PerilAssessor
 		if (s.getToxin() == Situation.Toxin.VENOM)
 		{
 			boolean cure = r.getAntivenomDoses() > 0;
-			score += add(reasons, cure ? "Venomed" : "Venomed with no anti-venom on you", cure ? Peril.Tone.WARN : Peril.Tone.BAD, cure ? 5 : 10);
+			score += add(reasons, Peril.Topic.KIT, cure ? "Venomed" : "Venomed with no anti-venom on you", cure ? Peril.Tone.WARN : Peril.Tone.BAD, cure ? 5 : 10);
 		}
 		else if (s.getToxin() == Situation.Toxin.POISON)
 		{
-			score += add(reasons, "Poisoned", Peril.Tone.NOTE, r.getAntipoisonDoses() + r.getAntivenomDoses() > 0 ? 2 : 4);
+			score += add(reasons, Peril.Topic.KIT, "Poisoned", Peril.Tone.NOTE, r.getAntipoisonDoses() + r.getAntivenomDoses() > 0 ? 2 : 4);
 		}
 
 		// What you brought, which only matters when something can hurt you.
@@ -157,35 +157,35 @@ public final class PerilAssessor
 		{
 			if (r.getFoodCount() == 0)
 			{
-				score += add(reasons, "No food in your pack", Peril.Tone.BAD, 16);
+				score += add(reasons, Peril.Topic.KIT, "No food in your pack", Peril.Tone.BAD, 16);
 			}
 			else if (r.getFoodHealing() < foodReserve)
 			{
-				score += add(reasons, "Only " + r.getFoodHealing() + " hitpoints of food left", Peril.Tone.WARN, 10);
+				score += add(reasons, Peril.Topic.KIT, "Only " + r.getFoodHealing() + " hitpoints of food left", Peril.Tone.WARN, 10);
 			}
 			// Above level 20 the Wilderness reason already says why the teleport fails.
 			if (!r.canEscapeAt(wild) && wild <= 20)
 			{
-				score += add(reasons, r.hasEscape() ? "Your teleport cannot reach out of here" : "No teleport to escape with",
+				score += add(reasons, Peril.Topic.KIT, r.hasEscape() ? "Your teleport cannot reach out of here" : "No teleport to escape with",
 					Peril.Tone.WARN, 12);
 			}
 			if (risk.atLeast(Risk.HIGH) && s.getMaxPrayer() > 1 && s.getPrayer() == 0)
 			{
-				score += add(reasons, "Out of prayer points", Peril.Tone.WARN, 5);
+				score += add(reasons, Peril.Topic.KIT, "Out of prayer points", Peril.Tone.WARN, 5);
 			}
 		}
 		// A ring of life is a comfort, not a plan: one hit from above its threshold skips it entirely,
 		// so it is mentioned but never allowed to talk the read down.
 		if (wild <= 30 && !r.getSavingGraces().isEmpty())
 		{
-			add(reasons, r.getSavingGraces().get(0) + " worn as a last resort", Peril.Tone.GOOD, 0);
+			add(reasons, Peril.Topic.KIT, r.getSavingGraces().get(0) + " worn as a last resort", Peril.Tone.GOOD, 0);
 		}
 
 		// A safe minigame still deserves attention, but its deaths are not the end.
 		if (risk == Risk.SAFE)
 		{
 			score = (int) Math.round(score * 0.4);
-			add(reasons, (zone != null ? zone.getName() : "This place") + ": deaths here are normally safe", Peril.Tone.GOOD, -1);
+			add(reasons, Peril.Topic.PLACE, (zone != null ? zone.getName() : "This place") + ": deaths here are normally safe", Peril.Tone.GOOD, -1);
 		}
 
 		score = Math.max(0, Math.min(100, score));
@@ -202,9 +202,9 @@ public final class PerilAssessor
 		return new Peril(level, score, reasons, secondsLeft);
 	}
 
-	private static int add(List<Peril.Reason> reasons, String text, Peril.Tone tone, int weight)
+	private static int add(List<Peril.Reason> reasons, Peril.Topic topic, String text, Peril.Tone tone, int weight)
 	{
-		reasons.add(new Peril.Reason(text, tone, weight));
+		reasons.add(new Peril.Reason(topic, text, tone, weight));
 		return weight;
 	}
 }
