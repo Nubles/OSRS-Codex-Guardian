@@ -36,4 +36,20 @@ public class ZonesTest
 		assertEquals(Risk.HIGH, Zones.wilderness(25).getRisk());
 		assertEquals(Risk.EXTREME, Zones.wilderness(40).getRisk());
 	}
+
+	@Test
+	public void readsTheGamesWildernessText()
+	{
+		assertEquals(23, Zones.parseWildernessLevel("Level: 23"));
+		assertEquals(35, Zones.parseWildernessLevel("<col=ffff00>Level: 35</col>"));
+		assertEquals(0, Zones.parseWildernessLevel(""));
+		assertEquals(0, Zones.parseWildernessLevel(null));
+	}
+
+	@Test
+	public void slayerCaveDepthsAreRead()
+	{
+		// The north end of the Wilderness Slayer Cave lies east of the surface Wilderness and above level 30.
+		assertTrue(Zones.wildernessLevel(3420, 10165) > 30);
+	}
 }

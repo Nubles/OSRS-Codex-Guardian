@@ -55,6 +55,8 @@ public class SuppliesTest
 		assertFalse(duel.canEscapeAt(21));
 		assertTrue(pack(item("Amulet of glory(t4)", 1)).hasEscape());
 		assertTrue(pack(item("Ring of wealth (5)", 1)).canEscapeAt(30));
+		assertTrue(pack(item("Ring of wealth (i5)", 1)).canEscapeAt(30));
+		assertFalse(pack(item("Ring of wealth (i)", 1)).hasEscape());
 	}
 
 	@Test
@@ -100,5 +102,24 @@ public class SuppliesTest
 		Readiness r = pack(item("Coins", 1000), item("Rune scimitar", 1));
 		assertEquals(0, r.getFoodCount());
 		assertNull(r.getBestEscape());
+	}
+
+	@Test
+	public void blightedSuppliesOnlyCountInTheWilderness()
+	{
+		List<Supplies.Item> inv = Arrays.asList(item("Blighted manta ray", 10), item("Shark", 1));
+		Readiness town = Supplies.assess(inv, Collections.emptyList(), 99, false);
+		Readiness wild = Supplies.assess(inv, Collections.emptyList(), 99, true);
+		assertEquals(1, town.getFoodCount());
+		assertEquals(11, wild.getFoodCount());
+	}
+
+	@Test
+	public void escapeReachFollowsTheBestTeleport()
+	{
+		assertEquals(30, pack(item("Amulet of glory(4)", 1)).getEscapeReach());
+		assertEquals(20, pack(item("Varrock teleport", 1)).getEscapeReach());
+		assertEquals(-1, pack(item("Shark", 1)).getEscapeReach());
+		assertFalse(pack(item("Chronicle", 1)).hasEscape());
 	}
 }

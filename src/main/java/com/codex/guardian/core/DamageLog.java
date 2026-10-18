@@ -65,4 +65,19 @@ public final class DamageLog
 		}
 		return max;
 	}
+
+	/**
+	 * The most damage taken in one tick in the last thirty seconds. Two attackers landing on the
+	 * same tick kill you just as dead as one big hit, so this, not the single biggest hitsplat,
+	 * is what "one more of those could end the run" has to be measured against.
+	 */
+	public int recentWorstTick()
+	{
+		int max = 0;
+		for (int value : perTick)
+		{
+			max = Math.max(max, value);
+		}
+		return max;
+	}
 }

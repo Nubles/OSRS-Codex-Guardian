@@ -41,17 +41,37 @@ public final class Peril
 		BAD
 	}
 
+	/** What a reason is about, so a view can leave out what another card already shows. */
+	public enum Topic
+	{
+		/** Your hitpoints and how fast they are going. */
+		VITALS,
+		/** Where you stand. */
+		PLACE,
+		/** Who is attacking you. */
+		THREAT,
+		/** What you carry: food, teleports, prayer, cures and saving graces. */
+		KIT
+	}
+
 	public static final class Reason
 	{
+		private final Topic topic;
 		private final String text;
 		private final Tone tone;
 		private final int weight;
 
-		Reason(String text, Tone tone, int weight)
+		Reason(Topic topic, String text, Tone tone, int weight)
 		{
+			this.topic = topic;
 			this.text = text;
 			this.tone = tone;
 			this.weight = weight;
+		}
+
+		public Topic getTopic()
+		{
+			return topic;
 		}
 
 		public String getText()

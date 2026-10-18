@@ -33,6 +33,7 @@ public final class Situation
 	private final int wildernessLevel;
 	private final boolean nearWilderness;
 	private final boolean multiCombat;
+	private final boolean teleblocked;
 	private final List<Threat> attackers;
 	private final double damagePerTick;
 	private final int recentMaxHit;
@@ -55,6 +56,7 @@ public final class Situation
 		wildernessLevel = b.wildernessLevel;
 		nearWilderness = b.nearWilderness;
 		multiCombat = b.multiCombat;
+		teleblocked = b.teleblocked;
 		attackers = Collections.unmodifiableList(new ArrayList<>(b.attackers));
 		damagePerTick = b.damagePerTick;
 		recentMaxHit = b.recentMaxHit;
@@ -148,6 +150,18 @@ public final class Situation
 		return multiCombat;
 	}
 
+	/** True while a player's Tele Block stops every teleport, wherever you stand. */
+	public boolean isTeleblocked()
+	{
+		return teleblocked;
+	}
+
+	/** Whether a teleport you carry would get you out from here, right now. */
+	public boolean canEscape()
+	{
+		return !teleblocked && readiness.canEscapeAt(wildernessLevel);
+	}
+
 	public List<Threat> getAttackers()
 	{
 		return attackers;
@@ -192,6 +206,7 @@ public final class Situation
 		return loggedIn == s.loggedIn && oneLife == s.oneLife && world == s.world && combatLevel == s.combatLevel
 			&& hitpoints == s.hitpoints && maxHitpoints == s.maxHitpoints && prayer == s.prayer && maxPrayer == s.maxPrayer
 			&& wildernessLevel == s.wildernessLevel && nearWilderness == s.nearWilderness && multiCombat == s.multiCombat
+			&& teleblocked == s.teleblocked
 			&& Double.compare(damagePerTick, s.damagePerTick) == 0 && recentMaxHit == s.recentMaxHit
 			&& Objects.equals(playerName, s.playerName) && Objects.equals(mode, s.mode) && toxin == s.toxin
 			&& Objects.equals(zone, s.zone) && attackers.equals(s.attackers) && Objects.equals(readiness, s.readiness);
@@ -201,7 +216,7 @@ public final class Situation
 	public int hashCode()
 	{
 		return Objects.hash(loggedIn, playerName, mode, oneLife, world, combatLevel, hitpoints, maxHitpoints, prayer,
-			maxPrayer, toxin, zone, wildernessLevel, nearWilderness, multiCombat, attackers, damagePerTick, recentMaxHit,
+			maxPrayer, toxin, zone, wildernessLevel, nearWilderness, multiCombat, teleblocked, attackers, damagePerTick, recentMaxHit,
 			readiness);
 	}
 
@@ -222,6 +237,7 @@ public final class Situation
 		private int wildernessLevel;
 		private boolean nearWilderness;
 		private boolean multiCombat;
+		private boolean teleblocked;
 		private final List<Threat> attackers = new ArrayList<>();
 		private double damagePerTick;
 		private int recentMaxHit;
@@ -294,6 +310,12 @@ public final class Situation
 		public Builder multiCombat(boolean value)
 		{
 			multiCombat = value;
+			return this;
+		}
+
+		public Builder teleblocked(boolean value)
+		{
+			teleblocked = value;
 			return this;
 		}
 

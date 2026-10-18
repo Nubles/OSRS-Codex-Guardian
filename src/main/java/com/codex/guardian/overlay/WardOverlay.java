@@ -40,16 +40,18 @@ public class WardOverlay extends Overlay
 		}
 	}
 
-	/** The briefing shown on entering a dangerous place. */
+	/** The briefing shown at a doorway: entering a dangerous place, nearing the ditch, passing a teleport limit. */
 	public static final class Briefing
 	{
+		final String heading;
 		final String zone;
 		final String risk;
 		final Color color;
 		final List<Check> checks;
 
-		public Briefing(String zone, String risk, Color color, List<Check> checks)
+		public Briefing(String heading, String zone, String risk, Color color, List<Check> checks)
 		{
+			this.heading = heading;
 			this.zone = zone;
 			this.risk = risk;
 			this.color = color;
@@ -68,10 +70,13 @@ public class WardOverlay extends Overlay
 		final boolean escapeOk;
 		final boolean showPlaque;
 		final Briefing briefing;
+		/** The one thing to do now, shown under the plaque in danger and peril, or null. */
+		final String action;
 
 		public View(Peril.Level level, int hitpoints, int maxHitpoints, String supplies, String escape, boolean escapeOk,
-			boolean showPlaque, Briefing briefing)
+			boolean showPlaque, Briefing briefing, String action)
 		{
+			this.action = action;
 			this.level = level;
 			this.hitpoints = hitpoints;
 			this.maxHitpoints = maxHitpoints;
@@ -115,7 +120,9 @@ public class WardOverlay extends Overlay
 		{
 			briefingHeight = small.getHeight() + bold.getHeight() + 4 + v.briefing.checks.size() * (small.getHeight() + 3) + 6;
 		}
-		int plaqueHeight = v.showPlaque ? small.getHeight() + bold.getHeight() + 6 + small.getHeight() + 4 : 0;
+		boolean action = v.showPlaque && v.action != null;
+		int plaqueHeight = v.showPlaque ? small.getHeight() + bold.getHeight() + 6 + small.getHeight() + 4
+			+ (action ? small.getHeight() + 8 : 0) : 0;
 		int height = PAD + briefingHeight + (v.briefing != null && v.showPlaque ? 6 : 0) + plaqueHeight + PAD - 2;
 
 		RoundRectangle2D shape = new RoundRectangle2D.Float(0.5f, 0.5f, WIDTH - 1, height - 1, 10, 10);
@@ -138,7 +145,7 @@ public class WardOverlay extends Overlay
 		{
 			Briefing b = v.briefing;
 			g.setFont(Theme.small());
-			shadow(g, "ENTERING", PAD, y + small.getAscent(), Theme.GOLD);
+			shadow(g, b.heading, PAD, y + small.getAscent(), Theme.GOLD);
 			shadow(g, b.risk, WIDTH - PAD - small.stringWidth(b.risk), y + small.getAscent(), b.color);
 			y += small.getHeight();
 			g.setFont(Theme.title());
@@ -195,6 +202,21 @@ public class WardOverlay extends Overlay
 			shadow(g, v.supplies, PAD, y + small.getAscent(), Theme.TEXT_MUTED);
 			String escape = clip(v.escape, small, WIDTH - PAD * 2 - small.stringWidth(v.supplies) - 8);
 			shadow(g, escape, WIDTH - PAD - small.stringWidth(escape), y + small.getAscent(), v.escapeOk ? Theme.TEAL : Theme.BLOOD);
+			y += small.getHeight() + 4;
+
+			if (action)
+			{
+				// What to do, set apart on a tinted band so it is the line the eye lands on.
+				g.setFont(Theme.body());
+				FontMetrics body = g.getFontMetrics();
+				int bandH = body.getHeight() + 2;
+				g.setColor(Theme.alpha(tint, 46 + (int) (beat * 40)));
+				g.fillRoundRect(PAD - 3, y, WIDTH - PAD * 2 + 6, bandH, 6, 6);
+				g.setColor(Theme.alpha(tint, 150));
+				g.drawRoundRect(PAD - 3, y, WIDTH - PAD * 2 + 6, bandH, 6, 6);
+				String text = clip(v.action, body, WIDTH - PAD * 2);
+				shadow(g, text, (WIDTH - body.stringWidth(text)) / 2, y + 1 + body.getAscent(), Theme.GOLD_BRIGHT);
+			}
 		}
 		return new Dimension(WIDTH, height);
 	}

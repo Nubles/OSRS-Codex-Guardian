@@ -1,5 +1,6 @@
 package com.codex.guardian.ui;
 
+import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.GradientPaint;
 import java.awt.Graphics;
@@ -12,6 +13,8 @@ public class ProgressBar extends JComponent
 {
 	private final Animator animator = new Animator(this);
 	private boolean complete;
+	private Color from;
+	private Color to;
 
 	public ProgressBar(int height)
 	{
@@ -19,6 +22,14 @@ public class ProgressBar extends JComponent
 		setMinimumSize(new Dimension(10, height));
 		setMaximumSize(new Dimension(Integer.MAX_VALUE, height));
 		setOpaque(false);
+	}
+
+	/** Fills with a fixed ramp instead of the progress colours, for bars where more is worse. */
+	public ProgressBar ramp(Color from, Color to)
+	{
+		this.from = from;
+		this.to = to;
+		return this;
 	}
 
 	public void setProgress(double progress, boolean complete, boolean animate)
@@ -41,7 +52,11 @@ public class ProgressBar extends JComponent
 		if (value > 0)
 		{
 			float fill = (float) Math.max(h, w * value);
-			if (complete)
+			if (from != null)
+			{
+				g.setPaint(new GradientPaint(0, 0, from, Math.max(1, fill), 0, to));
+			}
+			else if (complete)
 			{
 				g.setColor(Theme.GREEN);
 			}

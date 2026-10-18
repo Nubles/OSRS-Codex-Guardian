@@ -1,5 +1,6 @@
 package com.codex.guardian;
 
+import com.codex.guardian.core.Advice;
 import com.codex.guardian.core.CloseCallWatch;
 import com.codex.guardian.core.DamageLog;
 import com.codex.guardian.core.Journal;
@@ -27,6 +28,7 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
 import javax.swing.SwingUtilities;
 import net.runelite.api.Actor;
@@ -48,6 +50,8 @@ import net.runelite.api.events.GameTick;
 import net.runelite.api.events.HitsplatApplied;
 import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.StatChanged;
+import net.runelite.api.widgets.Widget;
+import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
@@ -55,6 +59,7 @@ import net.runelite.client.Notifier;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
+import net.runelite.client.events.ClientShutdown;
 import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.events.RuneScapeProfileChanged;
 import net.runelite.client.plugins.Plugin;
@@ -79,6 +84,10 @@ public class CodexGuardianPlugin extends Plugin
 	private static final int BRIEFING_TICKS = 17;
 	private static final int PERIL_NOTIFY_COOLDOWN_TICKS = 25;
 	private static final int VENOM_THRESHOLD = 1_000_000;
+	/** Tele Block's varbit counts down past 100 while it lasts; 100 and under is the immunity after it ends. */
+	private static final int TELEBLOCK_ACTIVE_ABOVE = 100;
+	/** The ditch warning comes back at most once every five minutes, so skilling near it is not a nag. */
+	private static final int APPROACH_COOLDOWN_TICKS = 500;
 	private static final EnumSet<WorldType> PVP_WORLDS = EnumSet.of(WorldType.PVP, WorldType.HIGH_RISK, WorldType.DEADMAN);
 
 	@Inject
@@ -133,8 +142,14 @@ public class CodexGuardianPlugin extends Plugin
 	private int readinessMaxHp;
 
 	private String lastZoneName;
+	private Briefing briefingKind;
 	private Zone briefingZone;
 	private int briefingTicks;
+	private boolean wasNearWilderness;
+	private int approachCooldown;
+	private int lastWilderness;
+	private boolean lastEscapeOk;
+	private boolean readinessInWilderness;
 	private Peril.Level lastLevel = Peril.Level.CALM;
 	private int perilCooldown;
 	private boolean lowHitpointsNotified;
@@ -203,14 +218,39 @@ public class CodexGuardianPlugin extends Plugin
 		shownScore = -1;
 		readinessDirty = true;
 		lastZoneName = null;
+		briefingKind = null;
 		briefingZone = null;
 		briefingTicks = 0;
+		wasNearWilderness = false;
+		lastWilderness = 0;
+		lastEscapeOk = false;
 		lastLevel = Peril.Level.CALM;
 		lowHitpointsNotified = false;
 		lastHitSource = null;
 		accountType = -1;
 		lastCombatLevel = -1;
 		settled = false;
+	}
+
+	@Subscribe
+	public void onClientShutdown(ClientShutdown event)
+	{
+		// ConfigManager writes its changes to disk in this same event, before a save queued on the
+		// client thread runs, so a save made here has to be sent on by hand or it is never written.
+		CompletableFuture<Void> done = new CompletableFuture<>();
+		clientThread.invokeLater(() ->
+		{
+			try
+			{
+				saveJournal();
+				configManager.sendConfig();
+			}
+			finally
+			{
+				done.complete(null);
+			}
+		});
+		event.waitFor(done);
 	}
 
 	@Subscribe
@@ -259,14 +299,18 @@ public class CodexGuardianPlugin extends Plugin
 		{
 			return;
 		}
-		assessor = new PerilAssessor(config.foodReserve());
+		int reserve = config.foodReserve();
+		// Settings change on the Swing thread; the assessor and the published read belong to the client thread.
+		clientThread.invokeLater(() ->
+		{
+			assessor = new PerilAssessor(reserve);
+			shownSituation = null;
+		});
 		GuardianPanel target = panel;
 		if (target != null)
 		{
-			int reserve = config.foodReserve();
 			SwingUtilities.invokeLater(() -> target.setFoodReserve(reserve));
 		}
-		shownSituation = null;
 	}
 
 	@Subscribe
@@ -326,7 +370,8 @@ public class CodexGuardianPlugin extends Plugin
 		{
 			return;
 		}
-		journal.death(place(situation), lastHitSource, situation.isOneLife(), System.currentTimeMillis());
+		journal.death(place(situation), lastHitSource, situation.isOneLife(), situation.risk() == Risk.SAFE,
+			System.currentTimeMillis());
 		journalChanged = true;
 		closeCalls.reset();
 		damage.clear();
@@ -362,6 +407,7 @@ public class CodexGuardianPlugin extends Plugin
 			watchCloseCall(s, now);
 			watchCombatLevel(s, now);
 		}
+		watchWilderness(s);
 		alert(s, p);
 		updateOverlays(s, p);
 		publishSituation(s, p);
@@ -408,7 +454,7 @@ public class CodexGuardianPlugin extends Plugin
 
 		WorldPoint where = location(local);
 		boolean inWilderness = client.getVarbitValue(VarbitID.INSIDE_WILDERNESS) == 1;
-		int wild = inWilderness && where != null ? Math.max(1, Zones.wildernessLevel(where.getX(), where.getY())) : 0;
+		int wild = inWilderness ? wildernessLevel(where) : 0;
 		Zone zone = where == null ? null : Zones.forRegion(where.getRegionID());
 		if (wild > 0)
 		{
@@ -424,8 +470,9 @@ public class CodexGuardianPlugin extends Plugin
 		}
 		b.zone(zone).wilderness(wild, !inWilderness && where != null && Zones.nearWilderness(where.getX(), where.getY()));
 		b.multiCombat(client.getVarbitValue(VarbitID.MULTIWAY_INDICATOR) == 1);
+		b.teleblocked(client.getVarbitValue(VarbitID.TELEBLOCK_CYCLES) > TELEBLOCK_ACTIVE_ABOVE);
 
-		for (NPC npc : client.getNpcs())
+		for (NPC npc : client.getTopLevelWorldView().npcs())
 		{
 			if (npc.getInteracting() == local && !npc.isDead() && npc.getCombatLevel() > 0)
 			{
@@ -435,7 +482,7 @@ public class CodexGuardianPlugin extends Plugin
 		// Outside PvP areas other players "interact" with you just by following or trading.
 		if (wild > 0 || zone != null && zone.getKind() == Zone.Kind.PVP_WORLD)
 		{
-			for (Player other : client.getPlayers())
+			for (Player other : client.getTopLevelWorldView().players())
 			{
 				if (other != local && other.getInteracting() == local)
 				{
@@ -443,16 +490,29 @@ public class CodexGuardianPlugin extends Plugin
 				}
 			}
 		}
-		b.damage(damage.pace(), damage.recentMaxHit());
+		b.damage(damage.pace(), damage.recentWorstTick());
 
-		if (readinessDirty || maxHp != readinessMaxHp)
+		if (readinessDirty || maxHp != readinessMaxHp || inWilderness != readinessInWilderness)
 		{
-			readiness = Supplies.assess(items(InventoryID.INV), items(InventoryID.WORN), maxHp);
+			readiness = Supplies.assess(items(InventoryID.INV), items(InventoryID.WORN), maxHp, inWilderness);
 			readinessDirty = false;
 			readinessMaxHp = maxHp;
+			readinessInWilderness = inWilderness;
 		}
 		b.readiness(readiness);
 		return b.build();
+	}
+
+	/**
+	 * The Wilderness level as the game shows it, falling back to coordinates. When both are known the
+	 * higher wins: reading a level too low is the mistake that tells you a teleport works when it does not.
+	 */
+	private int wildernessLevel(WorldPoint where)
+	{
+		int fromCoordinates = where == null ? 0 : Zones.wildernessLevel(where.getX(), where.getY());
+		Widget widget = client.getWidget(InterfaceID.PvpIcons.WILDERNESSLEVEL);
+		int fromGame = widget == null || widget.isHidden() ? 0 : Zones.parseWildernessLevel(widget.getText());
+		return Math.max(1, Math.max(fromCoordinates, fromGame));
 	}
 
 	private WorldPoint location(Player local)
@@ -548,7 +608,7 @@ public class CodexGuardianPlugin extends Plugin
 				break;
 		}
 		Actor strongest = null;
-		for (NPC npc : client.getNpcs())
+		for (NPC npc : client.getTopLevelWorldView().npcs())
 		{
 			if (npc.getInteracting() == local && (strongest == null || npc.getCombatLevel() > strongest.getCombatLevel()))
 			{
@@ -557,7 +617,7 @@ public class CodexGuardianPlugin extends Plugin
 		}
 		if (strongest == null)
 		{
-			for (Player other : client.getPlayers())
+			for (Player other : client.getTopLevelWorldView().players())
 			{
 				if (other != local && other.getInteracting() == local)
 				{
@@ -571,10 +631,21 @@ public class CodexGuardianPlugin extends Plugin
 	private void watchStatus(long now)
 	{
 		int type = client.getVarbitValue(VarbitID.IRONMAN);
-		// Losing hardcore turns HCIM (3) into a regular ironman (1) and HCGIM (5) into a group ironman (4).
-		if (accountType == 3 && type == 1 || accountType == 5 && type == 4)
+		if (type == 3 || type == 5)
 		{
-			journal.statusLost(now);
+			if (!journal.isHardcoreSeen())
+			{
+				journal.noteHardcore();
+				journalChanged = true;
+			}
+		}
+		// Losing hardcore turns HCIM (3) into a regular ironman (1) and HCGIM (5) into a group ironman (4).
+		// The journal remembers the account was hardcore, so a loss on mobile or another client is caught at the next login.
+		else if ((type == 1 || type == 4) && journal.isHardcoreSeen() && !journal.isStatusLost())
+		{
+			boolean seenHere = accountType == 3 || accountType == 5;
+			journal.statusLost(now, seenHere ? "The account is no longer hardcore"
+				: "Noticed at login: the account lost hardcore status while Guardian was not watching");
 			journalChanged = true;
 			saveJournal();
 		}
@@ -599,10 +670,9 @@ public class CodexGuardianPlugin extends Plugin
 			|| zone.getRisk() == Risk.SAFE;
 		if (risky && config.briefings())
 		{
-			briefingZone = zone;
-			briefingTicks = BRIEFING_TICKS;
+			brief(Briefing.ZONE, zone);
 		}
-		if (journal.zone(zone, now))
+		if (journal.zone(zone, s.getWildernessLevel(), now))
 		{
 			journalChanged = true;
 		}
@@ -631,6 +701,46 @@ public class CodexGuardianPlugin extends Plugin
 			journalChanged = true;
 		}
 		lastCombatLevel = level;
+	}
+
+	/** The ditch warning before you cross, and the moment you walk past the reach of your best teleport. */
+	private void watchWilderness(Situation s)
+	{
+		if (approachCooldown > 0)
+		{
+			approachCooldown--;
+		}
+		boolean near = s.isNearWilderness();
+		if (near && !wasNearWilderness && settled && approachCooldown == 0 && config.briefings())
+		{
+			brief(Briefing.APPROACH, null);
+			approachCooldown = APPROACH_COOLDOWN_TICKS;
+		}
+		wasNearWilderness = near;
+
+		int wild = s.getWildernessLevel();
+		Readiness r = s.getReadiness();
+		boolean escapeOk = r.canEscapeAt(wild);
+		if (settled && wild > 0 && lastWilderness > 0 && wild > lastWilderness && lastEscapeOk && !escapeOk)
+		{
+			if (config.briefings())
+			{
+				brief(Briefing.LIMIT, null);
+			}
+			if (config.notifyTeleportLimit())
+			{
+				notifier.notify("Guardian: level " + wild + ", past the reach of your " + shortName(r.getBestEscape()));
+			}
+		}
+		lastWilderness = wild;
+		lastEscapeOk = escapeOk;
+	}
+
+	private void brief(Briefing kind, Zone zone)
+	{
+		briefingKind = kind;
+		briefingZone = zone;
+		briefingTicks = BRIEFING_TICKS;
 	}
 
 	private static String strongestName(Situation s)
@@ -666,7 +776,8 @@ public class CodexGuardianPlugin extends Plugin
 		boolean notified = false;
 		if (level == Peril.Level.PERIL && lastLevel != Peril.Level.PERIL && perilCooldown == 0 && config.notifyPeril())
 		{
-			notifier.notify("Guardian: peril. " + p.headline());
+			String action = Advice.now(s, p);
+			notifier.notify("Guardian: peril. " + p.headline() + (action == null ? "" : ". " + action));
 			perilCooldown = PERIL_NOTIFY_COOLDOWN_TICKS;
 			notified = true;
 		}
@@ -677,7 +788,8 @@ public class CodexGuardianPlugin extends Plugin
 		int threshold = config.lowHitpointsPercent();
 		if (percent <= threshold)
 		{
-			if (!lowHitpointsNotified && !notified && config.notifyLowHitpoints())
+			// Low hitpoints are the point of a safe minigame like Nightmare Zone; saying so every time is noise.
+			if (!lowHitpointsNotified && !notified && config.notifyLowHitpoints() && s.risk() != Risk.SAFE)
 			{
 				notifier.notify("Guardian: hitpoints low (" + s.getHitpoints() + "/" + s.getMaxHitpoints() + ")");
 			}
@@ -697,9 +809,11 @@ public class CodexGuardianPlugin extends Plugin
 		if (briefingTicks > 0)
 		{
 			briefingTicks--;
-			if (briefingZone != null && briefingZone.getName().equals(s.getZone() == null ? null : s.getZone().getName()))
+			briefing = briefing(s);
+			if (briefing == null)
 			{
-				briefing = briefing(s, s.getZone());
+				// The moment has passed: you left the place, or stepped back from the ditch.
+				briefingTicks = 0;
 			}
 		}
 
@@ -718,46 +832,99 @@ public class CodexGuardianPlugin extends Plugin
 			default:
 				showPlaque = false;
 		}
+		// A doorway briefing keeps the plaque's action line quiet, but never in peril: getting jumped at the ditch
+		// is exactly when the briefing is still on screen and the one line that matters is what to do.
 		Readiness r = s.getReadiness();
 		String supplies = r.getFoodCount() == 0 ? "No food" : r.getFoodCount() + " food  " + r.getFoodHealing() + " hp";
-		boolean escapeOk = r.canEscapeAt(s.getWildernessLevel());
-		String escape = escapeOk ? shortName(r.getBestEscape()) : r.hasEscape() ? "Teleport blocked" : "No way out";
+		boolean escapeOk = s.canEscape();
+		String escape = escapeOk ? shortName(r.getBestEscape()) : s.isTeleblocked() ? "Teleblocked"
+			: r.hasEscape() ? "Teleport blocked" : "No way out";
 		overlay.setView(new WardOverlay.View(p.getLevel(), s.getHitpoints(), s.getMaxHitpoints(), supplies, escape, escapeOk,
-			showPlaque, briefing));
+			showPlaque, briefing, briefing == null || p.getLevel() == Peril.Level.PERIL ? Advice.now(s, p) : null));
 	}
 
-	private WardOverlay.Briefing briefing(Situation s, Zone zone)
+	/** The briefing for the moment Guardian is announcing, or null once it no longer applies. */
+	private WardOverlay.Briefing briefing(Situation s)
+	{
+		if (briefingKind == null)
+		{
+			return null;
+		}
+		int wild = s.getWildernessLevel();
+		switch (briefingKind)
+		{
+			case APPROACH:
+				if (!s.isNearWilderness() && wild == 0)
+				{
+					return null;
+				}
+				return new WardOverlay.Briefing("AHEAD", "The Wilderness", "PVP", Theme.EMBER, kitChecks(s));
+			case LIMIT:
+			{
+				if (wild == 0 || s.getReadiness().canEscapeAt(wild))
+				{
+					return null;
+				}
+				List<WardOverlay.Check> checks = new ArrayList<>();
+				String best = shortName(s.getReadiness().getBestEscape());
+				int reach = Math.max(0, s.getReadiness().getEscapeReach());
+				checks.add(new WardOverlay.Check(Mark.Kind.BAD, best + " stops at level " + reach));
+				checks.add(new WardOverlay.Check(Mark.Kind.WARN, "Walk south to level " + reach));
+				checks.addAll(kitChecks(s).subList(0, 1));
+				return new WardOverlay.Briefing("LEVEL " + wild, "Past your teleport", "NO ESCAPE", Theme.BLOOD, checks);
+			}
+			default:
+			{
+				Zone zone = s.getZone();
+				if (zone == null || briefingZone == null || !briefingZone.getName().equals(zone.getName()))
+				{
+					return null;
+				}
+				List<WardOverlay.Check> checks;
+				if (zone.getRisk() == Risk.SAFE)
+				{
+					checks = Collections.singletonList(new WardOverlay.Check(Mark.Kind.GOOD, "Deaths here are normally safe"));
+				}
+				else
+				{
+					checks = kitChecks(s);
+				}
+				String risk = zone.getKind() == Zone.Kind.WILDERNESS ? "LEVEL " + wild : zone.getRisk().getLabel().toUpperCase() + " RISK";
+				return new WardOverlay.Briefing("ENTERING", zone.getName(), risk, Theme.risk(zone.getRisk()), checks);
+			}
+		}
+	}
+
+	/** Food, a way out that works here, and a saving grace: the three things worth checking at a doorway. */
+	private List<WardOverlay.Check> kitChecks(Situation s)
 	{
 		List<WardOverlay.Check> checks = new ArrayList<>();
-		if (zone.getRisk() == Risk.SAFE)
-		{
-			checks.add(new WardOverlay.Check(Mark.Kind.GOOD, "Deaths here are normally safe"));
-		}
-		else
-		{
-			Readiness r = s.getReadiness();
-			int reserve = config.foodReserve();
-			checks.add(new WardOverlay.Check(r.getFoodCount() == 0 ? Mark.Kind.BAD : r.getFoodHealing() >= reserve ? Mark.Kind.GOOD : Mark.Kind.WARN,
-				r.getFoodCount() == 0 ? "No food" : r.getFoodCount() + " food, " + r.getFoodHealing() + " hp"));
-			int wild = s.getWildernessLevel();
-			checks.add(new WardOverlay.Check(r.canEscapeAt(wild) ? Mark.Kind.GOOD : Mark.Kind.BAD,
-				r.canEscapeAt(wild) ? shortName(r.getBestEscape()) : r.hasEscape() ? "Teleports blocked here" : "No teleport"));
-			List<String> graces = r.getSavingGraces();
-			checks.add(new WardOverlay.Check(graces.isEmpty() ? Mark.Kind.NONE : Mark.Kind.GOOD,
-				graces.isEmpty() ? "No saving grace" : graces.get(0)));
-		}
-		String risk = zone.getKind() == Zone.Kind.WILDERNESS ? "LEVEL " + s.getWildernessLevel() : zone.getRisk().getLabel().toUpperCase() + " RISK";
-		return new WardOverlay.Briefing(zone.getName(), risk, Theme.risk(zone.getRisk()), checks);
+		Readiness r = s.getReadiness();
+		int reserve = config.foodReserve();
+		checks.add(new WardOverlay.Check(r.getFoodCount() == 0 ? Mark.Kind.BAD : r.getFoodHealing() >= reserve ? Mark.Kind.GOOD : Mark.Kind.WARN,
+			r.getFoodCount() == 0 ? "No food" : r.getFoodCount() + " food, " + r.getFoodHealing() + " hp"));
+		int wild = s.getWildernessLevel();
+		boolean escape = s.canEscape();
+		checks.add(new WardOverlay.Check(escape ? Mark.Kind.GOOD : Mark.Kind.BAD,
+			escape ? shortName(r.getBestEscape()) : s.isTeleblocked() ? "Teleblocked"
+				: r.hasEscape() ? "Teleports blocked here" : "No teleport"));
+		List<String> graces = r.getSavingGraces();
+		checks.add(new WardOverlay.Check(graces.isEmpty() || wild > 30 ? Mark.Kind.NONE : Mark.Kind.GOOD,
+			graces.isEmpty() ? "No saving grace" : wild > 30 ? graces.get(0) + " fails above 30" : graces.get(0)));
+		return checks;
+	}
+
+	/** The moments that open the plaque into a briefing. */
+	private enum Briefing
+	{
+		ZONE,
+		APPROACH,
+		LIMIT
 	}
 
 	private static String shortName(String item)
 	{
-		if (item == null)
-		{
-			return "";
-		}
-		return item.replace("Amulet of eternal glory", "Eternal glory").replace("Amulet of glory", "Glory")
-			.replace("Ring of dueling", "Dueling").replace(" teleport", " tab");
+		return Advice.shortName(item);
 	}
 
 	/** Sends the live read to the panel, but only when something it shows has changed. */

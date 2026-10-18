@@ -49,6 +49,8 @@ class EntryGlyph extends JComponent
 				return Theme.GOLD_BRIGHT;
 			case ZONE:
 				return Theme.GOLD;
+			case SAFE_DEATH:
+				return Theme.GREEN;
 			default:
 				return Theme.TEAL;
 		}
@@ -110,6 +112,7 @@ class EntryGlyph extends JComponent
 				break;
 			}
 			case DEATH:
+			case SAFE_DEATH:
 			{
 				// A small skull.
 				g.fill(new Ellipse2D.Float(cx - s * 0.24f, y + s * 0.2f, s * 0.48f, s * 0.42f));

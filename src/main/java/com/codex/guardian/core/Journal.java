@@ -21,7 +21,9 @@ public final class Journal
 		DEATH,
 		STATUS_LOST,
 		DISCONNECT,
-		MILESTONE
+		MILESTONE,
+		/** A death in a safe minigame: worth remembering, but it costs nothing. */
+		SAFE_DEATH
 	}
 
 	public static final class Entry
@@ -97,8 +99,12 @@ public final class Journal
 	long dangerTicks;
 	int closeCalls;
 	int deaths;
+	/** Deaths in safe minigames, which do not end a run. */
+	int safeDeaths;
 	int disconnects;
 	boolean statusLost;
+	/** Set once Guardian has seen this account as hardcore, so a loss of status while away is still noticed. */
+	boolean hardcoreSeen;
 	int lowestHitpoints = -1;
 	String lowestPlace;
 	Hit biggestHit;
@@ -122,6 +128,16 @@ public final class Journal
 			entries = new ArrayList<>();
 		}
 		entries.removeIf(e -> e == null || e.type == null);
+		// Older journals split Wilderness close calls by level; one row for the Wilderness ranks it honestly.
+		Map<String, Integer> places = new LinkedHashMap<>();
+		closeCallsByPlace.forEach((place, count) ->
+		{
+			if (place != null && count != null)
+			{
+				places.merge(area(place), count, Integer::sum);
+			}
+		});
+		closeCallsByPlace = places;
 		return this;
 	}
 
@@ -169,41 +185,94 @@ public final class Journal
 	{
 		closeCalls++;
 		String where = place == null ? "Gielinor" : place;
-		closeCallsByPlace.merge(where, 1, Integer::sum);
+		closeCallsByPlace.merge(area(where), 1, Integer::sum);
 		if (lowestHitpoints < 0 || lowest < lowestHitpoints)
 		{
 			lowestHitpoints = lowest;
 			lowestPlace = where;
 		}
-		String detail = "Down to " + lowest + "/" + max + " hitpoints in " + where + (source != null ? ", against " + source : "");
+		String detail = "Down to " + lowest + "/" + max + " hitpoints " + at(where) + (source != null ? ", against " + source : "");
 		add(now, Type.CLOSE_CALL, "Survived a close call", detail);
 	}
 
-	public void death(String place, String source, boolean oneLife, long now)
+	/**
+	 * Records a death.
+	 *
+	 * @param safe true for a death in a safe minigame, which costs nothing and does not end the run
+	 */
+	public void death(String place, String source, boolean oneLife, boolean safe, long now)
 	{
+		String detail = (place == null ? "Somewhere in Gielinor" : capitalise(at(place))) + (source != null ? ", to " + source : "");
+		if (safe)
+		{
+			safeDeaths++;
+			add(now, Type.SAFE_DEATH, "A safe death", detail);
+			return;
+		}
 		deaths++;
-		String detail = (place == null ? "Somewhere in Gielinor" : "In " + place) + (source != null ? ", to " + source : "");
 		add(now, Type.DEATH, oneLife ? "The run has fallen" : "Died", detail);
 	}
 
+	/** Notes that the account is hardcore right now. */
+	public void noteHardcore()
+	{
+		hardcoreSeen = true;
+	}
+
+	public boolean isHardcoreSeen()
+	{
+		return hardcoreSeen;
+	}
+
 	public void statusLost(long now)
+	{
+		statusLost(now, "The account is no longer hardcore");
+	}
+
+	public void statusLost(long now, String detail)
 	{
 		if (statusLost)
 		{
 			return;
 		}
 		statusLost = true;
-		add(now, Type.STATUS_LOST, "Hardcore status lost", "The account is no longer hardcore");
+		add(now, Type.STATUS_LOST, "Hardcore status lost", detail);
 	}
 
 	public void disconnect(String place, long now)
 	{
 		disconnects++;
-		add(now, Type.DISCONNECT, "Disconnected in danger", place == null ? null : "In " + place);
+		add(now, Type.DISCONNECT, "Disconnected in danger", place == null ? null : capitalise(at(place)));
+	}
+
+	/** "in the Wilderness level 20", "at Vorkath": the Wilderness is a region, everything else a place you stand at. */
+	static String at(String place)
+	{
+		return place.startsWith("Wilderness") ? "in " + place : "at " + place;
+	}
+
+	/** The row a close call ranks under: the Wilderness as a whole, any other place by its name. */
+	static String area(String place)
+	{
+		return place.startsWith("Wilderness level") ? "Wilderness" : place;
+	}
+
+	private static String capitalise(String text)
+	{
+		return text.isEmpty() ? text : Character.toUpperCase(text.charAt(0)) + text.substring(1);
 	}
 
 	/** Notes the first visit to a risky zone. Returns true if an entry was written. */
 	public boolean zone(Zone zone, long now)
+	{
+		return zone(zone, 0, now);
+	}
+
+	/**
+	 * Notes the first visit to a risky zone, with the Wilderness level it was entered at.
+	 * Returns true if an entry was written.
+	 */
+	public boolean zone(Zone zone, int wildernessLevel, long now)
 	{
 		if (zone == null || !zone.getRisk().atLeast(Risk.HIGH) && zone.getKind() != Zone.Kind.WILDERNESS)
 		{
@@ -221,7 +290,10 @@ public final class Journal
 				return false;
 			}
 		}
-		add(now, Type.ZONE, zone.getName(), zone.kindLabel() + "  ·  " + zone.getRisk().getLabel() + " risk");
+		String kind = zone.getKind() == Zone.Kind.WILDERNESS
+			? wildernessLevel > 0 ? "Entered at level " + wildernessLevel : "Other players can attack you"
+			: zone.kindLabel();
+		add(now, Type.ZONE, zone.getName(), kind + "  ·  " + zone.getRisk().getLabel() + " risk");
 		return true;
 	}
 
@@ -281,6 +353,11 @@ public final class Journal
 	public int getDeaths()
 	{
 		return deaths;
+	}
+
+	public int getSafeDeaths()
+	{
+		return safeDeaths;
 	}
 
 	public int getDisconnects()

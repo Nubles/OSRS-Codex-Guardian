@@ -1,5 +1,6 @@
 package com.codex.guardian.ui;
 
+import com.codex.guardian.core.Advice;
 import com.codex.guardian.core.Peril;
 import com.codex.guardian.core.Readiness;
 import com.codex.guardian.core.Risk;
@@ -7,10 +8,18 @@ import com.codex.guardian.core.Situation;
 import com.codex.guardian.core.Threat;
 import com.codex.guardian.core.Zone;
 import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.FlowLayout;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import javax.swing.JComponent;
+import javax.swing.JLabel;
 import javax.swing.BoxLayout;
 import javax.swing.JPanel;
 import javax.swing.border.EmptyBorder;
@@ -35,43 +44,51 @@ final class WardView
 
 		stack.add(dial(s, peril, gauge));
 
-		Zone zone = s.getZone();
-		stack.add(new SectionHeader("Where you are", zone == null ? null : zone.getRisk().getLabel() + " risk"));
-		stack.add(place(s));
-
-		stack.add(new SectionHeader("Readiness"));
-		addReadiness(stack, s, foodReserve);
-
 		List<Threat> attackers = s.getAttackers();
 		if (!attackers.isEmpty())
 		{
+			// In a fight, who is on you matters more than the map.
 			stack.add(new SectionHeader("Attacking you", String.valueOf(attackers.size())));
-			for (Threat t : attackers)
-			{
-				boolean outclassed = t.isPlayer() || t.getCombatLevel() >= s.getCombatLevel() + 20;
-				stack.add(Rows.line(new Mark(outclassed ? Mark.Kind.BAD : Mark.Kind.WARN, 14), t.getName(),
-					t.isPlayer() ? "Another player" : "Level " + t.getCombatLevel(),
-					t.isPlayer() ? new Pill("Player", Theme.BLOOD) : null, outclassed ? Theme.BLOOD : null));
-			}
+			stack.add(attackers(s));
 		}
 
-		List<Peril.Reason> reasons = peril.getReasons();
-		if (!reasons.isEmpty())
+		stack.add(new SectionHeader("Where you are"));
+		stack.add(place(s));
+
+		stack.add(new SectionHeader("Readiness"));
+		stack.add(readiness(s, foodReserve));
+
+		// Every reason except the ones the dial already says out loud.
+		String headline = peril.headline();
+		boolean paceShown = paceShown(peril);
+		List<JComponent> rows = new ArrayList<>();
+		Set<String> seen = new HashSet<>();
+		for (Peril.Reason r : peril.getReasons())
 		{
-			stack.add(new SectionHeader("Guardian's read"));
-			Set<String> seen = new HashSet<>();
-			int shown = 0;
-			for (Peril.Reason r : reasons)
+			if (rows.size() >= 6 || r.getText().equals(headline) || !seen.add(r.getText()) || saidElsewhere(r)
+				|| paceShown && r.getText().startsWith("At this pace"))
 			{
-				if (shown >= 6 || !seen.add(r.getText()))
-				{
-					continue;
-				}
-				stack.add(Rows.reason(Mark.of(r.getTone()), r.getText()));
-				shown++;
+				continue;
 			}
+			rows.add(Rows.sentence(Mark.of(r.getTone()), r.getText(), TEXT - 30));
+		}
+		if (!rows.isEmpty())
+		{
+			stack.add(new SectionHeader("Also weighing in"));
+			stack.add(Rows.ledger(rows));
 		}
 		return stack;
+	}
+
+	/** The place card and the readiness ledger already carry these, each with its own verdict mark. */
+	private static boolean saidElsewhere(Peril.Reason r)
+	{
+		return r.getTopic() == Peril.Topic.PLACE || r.getTopic() == Peril.Topic.KIT || r.getTone() == Peril.Tone.GOOD;
+	}
+
+	private static boolean paceShown(Peril peril)
+	{
+		return peril.getSecondsLeft() >= 0 && peril.getSecondsLeft() < 60;
 	}
 
 	private static Card dial(Situation s, Peril peril, PerilGauge gauge)
@@ -88,9 +105,19 @@ final class WardView
 		text.setOpaque(false);
 		text.setLayout(new BoxLayout(text, BoxLayout.Y_AXIS));
 		text.add(centred(Ui.wrapped(peril.headline(), Theme.body(), Theme.TEXT, TEXT - 16)));
-		if (peril.getSecondsLeft() >= 0 && peril.getSecondsLeft() < 60)
+		if (paceShown(peril))
 		{
 			text.add(centred(Ui.label("About " + peril.getSecondsLeft() + "s of hitpoints at this pace", Theme.small(), Theme.BLOOD)));
+		}
+		String action = Advice.now(s, peril);
+		if (action != null)
+		{
+			JLabel label = Ui.wrapped(action, Theme.title(), Theme.GOLD_BRIGHT, TEXT - 16);
+			JPanel band = new ActionBand(Theme.peril(peril.getLevel()));
+			band.add(label);
+			JPanel holder = centred(band);
+			holder.setBorder(new EmptyBorder(6, 0, 0, 0));
+			text.add(holder);
 		}
 		card.add(text, BorderLayout.CENTER);
 		return card;
@@ -105,6 +132,32 @@ final class WardView
 		return row;
 	}
 
+	/** Attackers grouped by name and level, strongest first, so two black demons read as one line. */
+	private static Card attackers(Situation s)
+	{
+		Map<String, Integer> counts = new LinkedHashMap<>();
+		Map<String, Threat> first = new LinkedHashMap<>();
+		List<Threat> sorted = new ArrayList<>(s.getAttackers());
+		sorted.sort((a, b) -> Integer.compare(b.getCombatLevel(), a.getCombatLevel()));
+		for (Threat t : sorted)
+		{
+			String key = (t.isPlayer() ? "p:" : "n:") + t.getName() + ":" + t.getCombatLevel();
+			counts.merge(key, 1, Integer::sum);
+			first.putIfAbsent(key, t);
+		}
+		List<JComponent> rows = new ArrayList<>();
+		for (Map.Entry<String, Threat> e : first.entrySet())
+		{
+			Threat t = e.getValue();
+			int n = counts.get(e.getKey());
+			boolean outclassed = t.isPlayer() || t.getCombatLevel() >= s.getCombatLevel() + 20;
+			String name = (t.getName() == null ? "Unknown" : t.getName()) + (n > 1 ? "  x" + n : "");
+			String value = t.isPlayer() ? "Player, lvl " + t.getCombatLevel() : "Level " + t.getCombatLevel();
+			rows.add(Rows.fact(outclassed ? Mark.Kind.BAD : Mark.Kind.WARN, name, value, outclassed ? Theme.BLOOD : null));
+		}
+		return Rows.ledger(rows);
+	}
+
 	private static Card place(Situation s)
 	{
 		Zone zone = s.getZone();
@@ -114,17 +167,23 @@ final class WardView
 		{
 			card.accent(Theme.risk(risk));
 		}
-		JPanel top = new JPanel(new BorderLayout(6, 0));
-		top.setOpaque(false);
-		top.add(Ui.label(zone == null ? "Open ground" : zone.getName(), Theme.title(), Theme.GOLD_BRIGHT), BorderLayout.CENTER);
-		card.add(top, BorderLayout.NORTH);
+		String name = zone == null ? "Open ground"
+			: zone.getKind() == Zone.Kind.WILDERNESS ? "Wilderness, level " + s.getWildernessLevel() : zone.getName();
+		card.add(Ui.label(name, Theme.title(), Theme.GOLD_BRIGHT), BorderLayout.NORTH);
 
 		JPanel pills = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
 		pills.setOpaque(false);
 		if (zone != null)
 		{
-			pills.add(new Pill(zone.kindLabel(), Theme.GOLD));
+			if (zone.getKind() != Zone.Kind.WILDERNESS)
+			{
+				pills.add(new Pill(zone.kindLabel(), Theme.GOLD));
+			}
 			pills.add(new Pill(risk.getLabel() + " risk", Theme.risk(risk)));
+		}
+		else if (s.isNearWilderness())
+		{
+			pills.add(new Pill("Wilderness ahead", Theme.EMBER));
 		}
 		else
 		{
@@ -142,7 +201,7 @@ final class WardView
 		String advice = zone != null ? zone.getAdvice()
 			: s.isNearWilderness() ? "The Wilderness starts a few steps north. Other players can attack you past the ditch."
 			: "Nothing here Guardian knows to be dangerous. Stay sharp all the same.";
-		javax.swing.JLabel adviceLabel = Ui.wrapped(advice, Theme.small(), Theme.TEXT_MUTED, TEXT);
+		JLabel adviceLabel = Ui.wrapped(advice, Theme.small(), Theme.TEXT_MUTED, TEXT);
 		adviceLabel.setBorder(new EmptyBorder(4, 0, 0, 0));
 		adviceLabel.setAlignmentX(0f);
 		body.add(adviceLabel);
@@ -150,61 +209,88 @@ final class WardView
 		return card;
 	}
 
-	private static void addReadiness(StackPanel stack, Situation s, int foodReserve)
+	private static Card readiness(Situation s, int foodReserve)
 	{
 		Readiness r = s.getReadiness();
-		boolean exposed = s.inHarmsWay() || s.getWildernessLevel() > 0;
-		boolean safe = s.risk() == Risk.SAFE;
+		boolean exposed = (s.inHarmsWay() || s.getWildernessLevel() > 0) && s.risk() != Risk.SAFE;
+		List<JComponent> rows = new ArrayList<>();
 
-		Mark.Kind food = r.getFoodCount() == 0 ? (exposed && !safe ? Mark.Kind.BAD : Mark.Kind.NONE)
+		Mark.Kind food = r.getFoodCount() == 0 ? (exposed ? Mark.Kind.BAD : Mark.Kind.NONE)
 			: r.getFoodHealing() >= foodReserve ? Mark.Kind.GOOD : Mark.Kind.WARN;
-		stack.add(Rows.check(food, "Food",
-			r.getFoodCount() == 0 ? "Nothing to eat in your pack" : r.getFoodCount() + (r.getFoodCount() == 1 ? " piece" : " pieces"),
-			r.getFoodCount() == 0 ? null : r.getFoodHealing() + " hp"));
+		rows.add(Rows.fact(food, "Food", r.getFoodCount() == 0 ? "None" : r.getFoodCount() + "  ·  " + r.getFoodHealing() + " hp",
+			food == Mark.Kind.NONE ? null : Mark.color(food)));
 
 		int wild = s.getWildernessLevel();
-		Mark.Kind escape;
-		String escapeDetail;
-		if (r.canEscapeAt(wild))
+		if (s.isTeleblocked() && r.hasEscape())
 		{
-			escape = Mark.Kind.GOOD;
-			escapeDetail = r.getBestEscape() + (r.getEscapeCount() > 1 ? " and " + (r.getEscapeCount() - 1) + " more" : "");
+			rows.add(Rows.fact(Mark.Kind.BAD, "Way out", "Teleblocked", Theme.BLOOD));
+		}
+		else if (r.canEscapeAt(wild))
+		{
+			String more = r.getEscapeCount() > 1 ? "  +" + (r.getEscapeCount() - 1) : "";
+			rows.add(Rows.fact(Mark.Kind.GOOD, "Way out", Advice.shortName(r.getBestEscape()) + more, null));
 		}
 		else if (r.hasEscape())
 		{
-			escape = Mark.Kind.BAD;
-			escapeDetail = "Teleports blocked at level " + wild;
+			rows.add(Rows.fact(Mark.Kind.BAD, "Way out", "Only to level " + r.getEscapeReach(), Theme.BLOOD));
 		}
 		else
 		{
-			escape = exposed && !safe ? Mark.Kind.BAD : Mark.Kind.NONE;
-			escapeDetail = r.getLawRunes() > 0 ? "No item, but law runes" : "No teleport carried";
+			rows.add(Rows.fact(exposed ? Mark.Kind.BAD : Mark.Kind.NONE, "Way out",
+				r.getLawRunes() > 0 ? "Law runes only" : "None carried", exposed ? Theme.BLOOD : null));
 		}
-		stack.add(Rows.check(escape, "Way out", escapeDetail, null));
 
 		List<String> graces = r.getSavingGraces();
-		stack.add(Rows.check(graces.isEmpty() ? Mark.Kind.NONE : wild > 30 ? Mark.Kind.WARN : Mark.Kind.GOOD, "Saving grace",
-			graces.isEmpty() ? "None worn" : wild > 30 ? "No help above level 30" : String.join(", ", graces), null));
+		rows.add(Rows.fact(graces.isEmpty() ? Mark.Kind.NONE : wild > 30 ? Mark.Kind.WARN : Mark.Kind.GOOD, "Last resort",
+			graces.isEmpty() ? "None worn" : wild > 30 ? "Fails above 30" : String.join(", ", graces), null));
 
 		boolean prayerLow = s.getMaxPrayer() > 1 && s.getPrayer() * 4 < s.getMaxPrayer();
-		stack.add(Rows.check(r.getPrayerDoses() > 0 ? Mark.Kind.GOOD : prayerLow && exposed ? Mark.Kind.WARN : Mark.Kind.NONE, "Prayer",
-			s.getPrayer() + "/" + s.getMaxPrayer() + " points" + (r.getPrayerDoses() > 0 ? ", " + r.getPrayerDoses() + " doses to restore" : ""), null));
+		rows.add(Rows.fact(r.getPrayerDoses() > 0 ? Mark.Kind.GOOD : prayerLow && exposed ? Mark.Kind.WARN : Mark.Kind.NONE, "Prayer",
+			s.getPrayer() + "/" + s.getMaxPrayer() + (r.getPrayerDoses() > 0 ? "  ·  " + r.getPrayerDoses() + " doses" : ""), null));
 
 		Situation.Toxin toxin = s.getToxin();
 		int cures = r.getAntipoisonDoses() + r.getAntivenomDoses();
 		if (toxin == Situation.Toxin.VENOM)
 		{
-			stack.add(Rows.check(r.getAntivenomDoses() > 0 ? Mark.Kind.WARN : Mark.Kind.BAD, "Venomed",
-				r.getAntivenomDoses() > 0 ? r.getAntivenomDoses() + " anti-venom doses" : "No anti-venom on you", null));
+			boolean cure = r.getAntivenomDoses() > 0;
+			rows.add(Rows.fact(cure ? Mark.Kind.WARN : Mark.Kind.BAD, "Venomed",
+				cure ? r.getAntivenomDoses() + " anti-venom" : "No anti-venom", cure ? null : Theme.BLOOD));
 		}
 		else if (toxin == Situation.Toxin.POISON)
 		{
-			stack.add(Rows.check(cures > 0 ? Mark.Kind.NOTE : Mark.Kind.WARN, "Poisoned",
-				cures > 0 ? cures + " doses of cure on you" : "No antipoison on you", null));
+			rows.add(Rows.fact(cures > 0 ? Mark.Kind.NOTE : Mark.Kind.WARN, "Poisoned",
+				cures > 0 ? cures + " doses of cure" : "No antipoison", null));
 		}
 		else if (cures > 0)
 		{
-			stack.add(Rows.check(Mark.Kind.GOOD, "Cures", cures + " doses ready", null));
+			rows.add(Rows.fact(Mark.Kind.GOOD, "Cures", cures + " doses", null));
+		}
+		return Rows.ledger(rows);
+	}
+
+	/** A softly tinted band behind the one thing to do now. */
+	private static final class ActionBand extends JPanel
+	{
+		private final Color tint;
+
+		ActionBand(Color tint)
+		{
+			super(new BorderLayout());
+			this.tint = tint;
+			setOpaque(false);
+			setBorder(new EmptyBorder(4, 8, 4, 8));
+		}
+
+		@Override
+		protected void paintComponent(Graphics graphics)
+		{
+			Graphics2D g = (Graphics2D) graphics.create();
+			Theme.smooth(g);
+			g.setColor(Theme.alpha(tint, 52));
+			g.fillRoundRect(0, 0, getWidth(), getHeight(), 8, 8);
+			g.setColor(Theme.alpha(tint, 140));
+			g.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 8, 8);
+			g.dispose();
 		}
 	}
 
