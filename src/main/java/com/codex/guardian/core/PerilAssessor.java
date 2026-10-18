@@ -100,7 +100,7 @@ public final class PerilAssessor
 			{
 				score += add(reasons, Peril.Topic.PLACE, "Above level 30 no teleport works", Peril.Tone.BAD, 14);
 			}
-			else if (wild > 20 && !s.getReadiness().canEscapeAt(wild))
+			else if (wild > 20 && !s.isTeleblocked() && !s.getReadiness().canEscapeAt(wild))
 			{
 				score += add(reasons, Peril.Topic.PLACE, "Your teleports stop working above level 20", Peril.Tone.BAD, 12);
 			}
@@ -164,7 +164,11 @@ public final class PerilAssessor
 				score += add(reasons, Peril.Topic.KIT, "Only " + r.getFoodHealing() + " hitpoints of food left", Peril.Tone.WARN, 10);
 			}
 			// Above level 20 the Wilderness reason already says why the teleport fails.
-			if (!r.canEscapeAt(wild) && wild <= 20)
+			if (s.isTeleblocked())
+			{
+				score += add(reasons, Peril.Topic.KIT, "Teleblocked: no teleport works", Peril.Tone.BAD, 14);
+			}
+			else if (!r.canEscapeAt(wild) && wild <= 20)
 			{
 				score += add(reasons, Peril.Topic.KIT, r.hasEscape() ? "Your teleport cannot reach out of here" : "No teleport to escape with",
 					Peril.Tone.WARN, 12);

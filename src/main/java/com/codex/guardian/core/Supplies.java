@@ -33,7 +33,8 @@ public final class Supplies
 
 	private static final Pattern DOSES = Pattern.compile("^(.*?)\\s*\\((\\d+)\\)$");
 
-	private static final Pattern TRIMMED = Pattern.compile("^(amulet of glory)\\s*\\(t(\\d+)\\)$");
+	/** A trimmed glory reads "Amulet of glory(t4)" and an imbued ring of wealth "Ring of wealth (i5)". */
+	private static final Pattern TRIMMED = Pattern.compile("^(amulet of glory|ring of wealth)\\s*\\([ti](\\d+)\\)$");
 	/** Jewellery that shows its charges in its name, so one without a number is empty. */
 	private static final Set<String> CHARGED = new HashSet<>(Arrays.asList("amulet of glory", "combat bracelet",
 		"skills necklace", "ring of wealth", "ring of dueling", "games necklace", "necklace of passage", "digsite pendant",

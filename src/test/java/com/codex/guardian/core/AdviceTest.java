@@ -67,4 +67,22 @@ public class AdviceTest
 	{
 		assertNull(advise(fight(5, 8).zone(Zones.forRegion(9551)).readiness(Readiness.empty()).build()));
 	}
+
+	@Test
+	public void teleblockedNeverSaysTeleport()
+	{
+		// A PKer's Tele Block at level 10: the glory works at this level, but nothing will teleport you.
+		Situation s = fight(20, 25).zone(Zones.wilderness(10)).wilderness(10, false).teleblocked(true)
+			.readiness(kit("Shark", "Amulet of glory(4)")).build();
+		assertEquals("Eat, and run south", advise(s));
+		Situation noFood = fight(20, 25).teleblocked(true).readiness(kit("Amulet of glory(4)")).build();
+		assertEquals("Run: teleblocked, no food", advise(noFood));
+	}
+
+	@Test
+	public void noTeleportAtAllDoesNotPromiseLevelTwenty()
+	{
+		Situation s = fight(15, 8).zone(Zones.wilderness(25)).wilderness(25, false).readiness(kit("Shark")).build();
+		assertEquals("Eat, and run south", advise(s));
+	}
 }

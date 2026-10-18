@@ -55,6 +55,8 @@ public class SuppliesTest
 		assertFalse(duel.canEscapeAt(21));
 		assertTrue(pack(item("Amulet of glory(t4)", 1)).hasEscape());
 		assertTrue(pack(item("Ring of wealth (5)", 1)).canEscapeAt(30));
+		assertTrue(pack(item("Ring of wealth (i5)", 1)).canEscapeAt(30));
+		assertFalse(pack(item("Ring of wealth (i)", 1)).hasEscape());
 	}
 
 	@Test

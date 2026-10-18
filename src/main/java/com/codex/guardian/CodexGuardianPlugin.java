@@ -82,6 +82,8 @@ public class CodexGuardianPlugin extends Plugin
 	private static final int BRIEFING_TICKS = 17;
 	private static final int PERIL_NOTIFY_COOLDOWN_TICKS = 25;
 	private static final int VENOM_THRESHOLD = 1_000_000;
+	/** Tele Block's varbit counts down past 100 while it lasts; 100 and under is the immunity after it ends. */
+	private static final int TELEBLOCK_ACTIVE_ABOVE = 100;
 	/** The ditch warning comes back at most once every five minutes, so skilling near it is not a nag. */
 	private static final int APPROACH_COOLDOWN_TICKS = 500;
 	private static final EnumSet<WorldType> PVP_WORLDS = EnumSet.of(WorldType.PVP, WorldType.HIGH_RISK, WorldType.DEADMAN);
@@ -445,6 +447,7 @@ public class CodexGuardianPlugin extends Plugin
 		}
 		b.zone(zone).wilderness(wild, !inWilderness && where != null && Zones.nearWilderness(where.getX(), where.getY()));
 		b.multiCombat(client.getVarbitValue(VarbitID.MULTIWAY_INDICATOR) == 1);
+		b.teleblocked(client.getVarbitValue(VarbitID.TELEBLOCK_CYCLES) > TELEBLOCK_ACTIVE_ABOVE);
 
 		for (NPC npc : client.getTopLevelWorldView().npcs())
 		{
@@ -806,12 +809,15 @@ public class CodexGuardianPlugin extends Plugin
 			default:
 				showPlaque = false;
 		}
+		// A doorway briefing keeps the plaque's action line quiet, but never in peril: getting jumped at the ditch
+		// is exactly when the briefing is still on screen and the one line that matters is what to do.
 		Readiness r = s.getReadiness();
 		String supplies = r.getFoodCount() == 0 ? "No food" : r.getFoodCount() + " food  " + r.getFoodHealing() + " hp";
-		boolean escapeOk = r.canEscapeAt(s.getWildernessLevel());
-		String escape = escapeOk ? shortName(r.getBestEscape()) : r.hasEscape() ? "Teleport blocked" : "No way out";
+		boolean escapeOk = s.canEscape();
+		String escape = escapeOk ? shortName(r.getBestEscape()) : s.isTeleblocked() ? "Teleblocked"
+			: r.hasEscape() ? "Teleport blocked" : "No way out";
 		overlay.setView(new WardOverlay.View(p.getLevel(), s.getHitpoints(), s.getMaxHitpoints(), supplies, escape, escapeOk,
-			showPlaque, briefing, briefing == null ? Advice.now(s, p) : null));
+			showPlaque, briefing, briefing == null || p.getLevel() == Peril.Level.PERIL ? Advice.now(s, p) : null));
 	}
 
 	/** The briefing for the moment Guardian is announcing, or null once it no longer applies. */
@@ -875,9 +881,10 @@ public class CodexGuardianPlugin extends Plugin
 		checks.add(new WardOverlay.Check(r.getFoodCount() == 0 ? Mark.Kind.BAD : r.getFoodHealing() >= reserve ? Mark.Kind.GOOD : Mark.Kind.WARN,
 			r.getFoodCount() == 0 ? "No food" : r.getFoodCount() + " food, " + r.getFoodHealing() + " hp"));
 		int wild = s.getWildernessLevel();
-		boolean escape = r.canEscapeAt(wild);
+		boolean escape = s.canEscape();
 		checks.add(new WardOverlay.Check(escape ? Mark.Kind.GOOD : Mark.Kind.BAD,
-			escape ? shortName(r.getBestEscape()) : r.hasEscape() ? "Teleports blocked here" : "No teleport"));
+			escape ? shortName(r.getBestEscape()) : s.isTeleblocked() ? "Teleblocked"
+				: r.hasEscape() ? "Teleports blocked here" : "No teleport"));
 		List<String> graces = r.getSavingGraces();
 		checks.add(new WardOverlay.Check(graces.isEmpty() || wild > 30 ? Mark.Kind.NONE : Mark.Kind.GOOD,
 			graces.isEmpty() ? "No saving grace" : wild > 30 ? graces.get(0) + " fails above 30" : graces.get(0)));

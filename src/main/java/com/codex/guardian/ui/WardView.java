@@ -221,7 +221,11 @@ final class WardView
 			food == Mark.Kind.NONE ? null : Mark.color(food)));
 
 		int wild = s.getWildernessLevel();
-		if (r.canEscapeAt(wild))
+		if (s.isTeleblocked() && r.hasEscape())
+		{
+			rows.add(Rows.fact(Mark.Kind.BAD, "Way out", "Teleblocked", Theme.BLOOD));
+		}
+		else if (r.canEscapeAt(wild))
 		{
 			String more = r.getEscapeCount() > 1 ? "  +" + (r.getEscapeCount() - 1) : "";
 			rows.add(Rows.fact(Mark.Kind.GOOD, "Way out", Advice.shortName(r.getBestEscape()) + more, null));

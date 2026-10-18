@@ -122,4 +122,16 @@ public class PerilAssessorTest
 		assertEquals(4, p.getSecondsLeft());
 		assertEquals(Peril.Level.PERIL, p.getLevel());
 	}
+
+	@Test
+	public void teleblockIsNamedAndCountsAsNoEscape()
+	{
+		Situation s = base().zone(Zones.wilderness(10)).wilderness(10, false).teleblocked(true)
+			.attacker(new Threat("Pker", 90, true)).build();
+		assertTrue(s.getReadiness().canEscapeAt(10));
+		assertTrue(!s.canEscape());
+		Peril p = assessor.assess(s);
+		assertTrue(p.getReasons().stream().anyMatch(r -> r.getText().startsWith("Teleblocked")));
+		assertTrue(p.getReasons().stream().noneMatch(r -> r.getText().contains("cannot reach")));
+	}
 }

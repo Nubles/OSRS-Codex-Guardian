@@ -21,9 +21,11 @@ public final class Advice
 		Readiness r = s.getReadiness();
 		int wild = s.getWildernessLevel();
 		boolean food = r.getFoodCount() > 0;
-		boolean escape = r.canEscapeAt(wild);
+		boolean escape = s.canEscape();
 		String way = shortName(r.getBestEscape());
-		int walkTo = r.hasEscape() ? r.getEscapeReach() : 20;
+		// Walking back under your teleport's reach only helps when there is a teleport that will work there.
+		boolean walkBack = r.hasEscape() && !s.isTeleblocked();
+		int walkTo = r.getEscapeReach();
 		if (p.getLevel() == Peril.Level.PERIL)
 		{
 			boolean oneHit = s.getRecentMaxHit() > 0 && s.getHitpoints() <= s.getRecentMaxHit();
@@ -37,11 +39,11 @@ public final class Advice
 			}
 			if (food)
 			{
-				return wild > 0 ? "Eat, walk south to level " + walkTo : "Eat now and back away";
+				return wild > 0 ? walkBack ? "Eat, walk south to level " + walkTo : "Eat, and run south" : "Eat now and back away";
 			}
-			return wild > 0 ? "Run south now" : "Run: no food, no teleport";
+			return wild > 0 ? "Run south now" : s.isTeleblocked() ? "Run: teleblocked, no food" : "Run: no food, no teleport";
 		}
-		if (wild > 0 && !escape && r.hasEscape())
+		if (wild > 0 && !escape && walkBack)
 		{
 			return "Walk south to level " + walkTo;
 		}
