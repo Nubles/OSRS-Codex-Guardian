@@ -37,7 +37,7 @@ public final class Supplies
 	/** Jewellery that shows its charges in its name, so one without a number is empty. */
 	private static final Set<String> CHARGED = new HashSet<>(Arrays.asList("amulet of glory", "combat bracelet",
 		"skills necklace", "ring of wealth", "ring of dueling", "games necklace", "necklace of passage", "digsite pendant",
-		"slayer ring", "teleport crystal", "enchanted lyre"));
+		"slayer ring", "teleport crystal", "enchanted lyre", "ring of returning"));
 
 	private static final Map<String, Integer> FOOD = new HashMap<>();
 	private static final Map<String, Integer> TWO_BITE = new HashMap<>();
@@ -48,10 +48,11 @@ public final class Supplies
 	private static final String[] TELEPORT_JEWELLERY = {"amulet of glory", "amulet of eternal glory", "combat bracelet",
 		"skills necklace", "ring of wealth", "ring of dueling", "games necklace", "necklace of passage", "digsite pendant",
 		"slayer ring", "royal seed pod", "teleport crystal", "eternal teleport crystal", "enchanted lyre", "xeric's talisman",
-		"drakan's medallion", "ectophial", "ring of the elements", "ring of shadows", "camulet", "pharaoh's sceptre",
+		"drakan's medallion", "ectophial", "ring of the elements", "ring of shadows", "pharaoh's sceptre",
 		"construct. cape", "max cape", "crafting cape", "achievement diary cape", "ardougne cloak 2", "ardougne cloak 3",
 		"ardougne cloak 4", "explorer's ring 2", "explorer's ring 3", "explorer's ring 4", "karamja gloves 3",
-		"karamja gloves 4", "desert amulet 2", "desert amulet 3", "desert amulet 4", "quetzal whistle", "chronicle"};
+		"karamja gloves 4", "desert amulet 2", "desert amulet 3", "desert amulet 4", "quetzal whistle",
+		"ring of returning"};
 	/** Tablets and scrolls whose destination is itself in the Wilderness: not an escape. */
 	private static final String[] INTO_WILDERNESS = {"annakarl", "carrallanger", "carrallangar", "dareeyak", "ghorrock",
 		"cemetery", "ice plateau", "wilderness crabs", "revenant cave", "lava maze", "target teleport", "burning amulet"};
@@ -89,18 +90,30 @@ public final class Supplies
 	{
 	}
 
+	/** Works out readiness outside the Wilderness. */
+	public static Readiness assess(List<Item> inventory, List<Item> worn, int maxHitpoints)
+	{
+		return assess(inventory, worn, maxHitpoints, false);
+	}
+
 	/**
 	 * Works out readiness from the inventory and worn items.
 	 *
 	 * @param maxHitpoints the account's hitpoints level, which sets how much a brew heals
+	 * @param inWilderness blighted food and potions can only be used in the Wilderness, so anywhere
+	 *                     else they are not counted: a pack of blighted mantas outside it is no food at all
 	 */
-	public static Readiness assess(List<Item> inventory, List<Item> worn, int maxHitpoints)
+	public static Readiness assess(List<Item> inventory, List<Item> worn, int maxHitpoints, boolean inWilderness)
 	{
 		Readiness.Builder b = new Readiness.Builder();
 		List<Item> all = new ArrayList<>(inventory);
 		all.addAll(worn);
 		for (Item item : inventory)
 		{
+			if (!inWilderness && lower(item.name).startsWith("blighted "))
+			{
+				continue;
+			}
 			readFood(b, item, maxHitpoints);
 			readPotions(b, item);
 		}

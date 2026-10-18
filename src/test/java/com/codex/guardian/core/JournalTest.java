@@ -46,7 +46,7 @@ public class JournalTest
 	public void keepsDeathsWhenTrimming()
 	{
 		Journal j = Journal.fresh(0);
-		j.death("Vorkath", "Vorkath", true, 1);
+		j.death("Vorkath", "Vorkath", true, false, 1);
 		for (int i = 0; i < Journal.MAX_ENTRIES + 20; i++)
 		{
 			j.milestone("Level", null, i + 2);
@@ -81,5 +81,76 @@ public class JournalTest
 		j.repair();
 		assertNotNull(j.getEntries());
 		assertNotNull(j.getDamageBySource());
+	}
+
+	@Test
+	public void safeDeathDoesNotEndTheRun()
+	{
+		Journal j = Journal.fresh(0);
+		j.death("Fight Caves", "TzTok-Jad", true, true, 5);
+		assertEquals(0, j.getDeaths());
+		assertEquals(1, j.getSafeDeaths());
+		Journal.Entry last = j.getEntries().get(j.getEntries().size() - 1);
+		assertEquals(Journal.Type.SAFE_DEATH, last.getType());
+		assertEquals("At Fight Caves, to TzTok-Jad", last.getDetail());
+	}
+
+	@Test
+	public void unsafeDeathOnOneLifeFallsTheRun()
+	{
+		Journal j = Journal.fresh(0);
+		j.death("Vorkath", "Vorkath", true, false, 5);
+		assertEquals(1, j.getDeaths());
+		assertEquals("The run has fallen", j.getEntries().get(1).getTitle());
+	}
+
+	@Test
+	public void wildernessCloseCallsRankTogether()
+	{
+		Journal j = Journal.fresh(0);
+		j.closeCall(9, 99, "Wilderness level 18", "Revenant imp", 1);
+		j.closeCall(12, 99, "Wilderness level 31", null, 2);
+		assertEquals(2, (int) j.getCloseCallsByPlace().get("Wilderness"));
+		assertEquals("Wilderness level 18", j.getLowestPlace());
+		assertTrue(j.getEntries().get(1).getDetail().contains("in Wilderness level 18"));
+	}
+
+	@Test
+	public void repairMergesOldWildernessRows()
+	{
+		Journal j = Journal.fresh(0);
+		j.closeCallsByPlace.put("Wilderness level 18", 2);
+		j.closeCallsByPlace.put("Wilderness level 24", 1);
+		j.closeCallsByPlace.put("Vorkath", 1);
+		j.repair();
+		assertEquals(3, (int) j.getCloseCallsByPlace().get("Wilderness"));
+		assertEquals(1, (int) j.getCloseCallsByPlace().get("Vorkath"));
+		assertEquals(2, j.getCloseCallsByPlace().size());
+	}
+
+	@Test
+	public void statusLossIsRecordedOnce()
+	{
+		Journal j = Journal.fresh(0);
+		j.noteHardcore();
+		assertTrue(j.isHardcoreSeen());
+		j.statusLost(5, "Noticed at login");
+		j.statusLost(6);
+		assertTrue(j.isStatusLost());
+		assertEquals(2, j.getEntries().size());
+		assertEquals("Noticed at login", j.getEntries().get(1).getDetail());
+	}
+
+	@Test
+	public void worstTickAddsUpHitsLandingTogether()
+	{
+		DamageLog log = new DamageLog();
+		log.hit(15);
+		log.hit(14);
+		log.tick();
+		log.hit(20);
+		log.tick();
+		assertEquals(20, log.recentMaxHit());
+		assertEquals(29, log.recentWorstTick());
 	}
 }

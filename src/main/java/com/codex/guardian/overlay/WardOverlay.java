@@ -40,16 +40,18 @@ public class WardOverlay extends Overlay
 		}
 	}
 
-	/** The briefing shown on entering a dangerous place. */
+	/** The briefing shown at a doorway: entering a dangerous place, nearing the ditch, passing a teleport limit. */
 	public static final class Briefing
 	{
+		final String heading;
 		final String zone;
 		final String risk;
 		final Color color;
 		final List<Check> checks;
 
-		public Briefing(String zone, String risk, Color color, List<Check> checks)
+		public Briefing(String heading, String zone, String risk, Color color, List<Check> checks)
 		{
+			this.heading = heading;
 			this.zone = zone;
 			this.risk = risk;
 			this.color = color;
@@ -138,7 +140,7 @@ public class WardOverlay extends Overlay
 		{
 			Briefing b = v.briefing;
 			g.setFont(Theme.small());
-			shadow(g, "ENTERING", PAD, y + small.getAscent(), Theme.GOLD);
+			shadow(g, b.heading, PAD, y + small.getAscent(), Theme.GOLD);
 			shadow(g, b.risk, WIDTH - PAD - small.stringWidth(b.risk), y + small.getAscent(), b.color);
 			y += small.getHeight();
 			g.setFont(Theme.title());

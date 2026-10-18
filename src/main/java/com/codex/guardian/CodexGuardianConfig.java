@@ -141,6 +141,18 @@ public interface CodexGuardianConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "notifyTeleportLimit",
+		name = "Notify past teleport range",
+		description = "Sends a notification when you walk deeper into the Wilderness than your best teleport works",
+		position = 5,
+		section = alerts
+	)
+	default boolean notifyTeleportLimit()
+	{
+		return true;
+	}
+
+	@ConfigItem(
 		keyName = "oneLife",
 		name = "One-life account",
 		description = "Treat this account as having one life even if it is not a hardcore ironman, for example on Hardcore Worlds",

@@ -54,6 +54,12 @@ public final class Readiness
 		return bestEscape;
 	}
 
+	/** The deepest Wilderness level your best teleport still works at, or -1 without one. */
+	public int getEscapeReach()
+	{
+		return bestEscape == null ? -1 : escapeMaxWilderness;
+	}
+
 	public int getEscapeCount()
 	{
 		return escapeCount;

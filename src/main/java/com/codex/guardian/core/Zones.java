@@ -2,6 +2,8 @@ package com.codex.guardian.core;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * The atlas of dangerous places. Regions come from the same map squares RuneLite's own
@@ -18,6 +20,7 @@ public final class Zones
 	private static final String SKILLING = "A skilling boss. Its damage adds up while you work, so keep food and leave early.";
 
 	private static final Map<Integer, Zone> BY_REGION = new HashMap<>();
+	private static final Pattern LEVEL_TEXT = Pattern.compile("Level:\\s*(\\d{1,2})");
 
 	static
 	{
@@ -55,6 +58,11 @@ public final class Zones
 		put(new Zone("Zalcano", Zone.Kind.BOSS, Risk.MEDIUM, SKILLING), 12126);
 		put(new Zone("Tempoross", Zone.Kind.BOSS, Risk.LOW, SKILLING), 12076);
 
+		dungeon("Barrows crypts", Risk.HIGH, "Six brothers, one after another, and Ahrim and Karil hit through armour. "
+			+ "Bring prayer, food and a way out.", 14231);
+		dungeon("God Wars Dungeon", Risk.HIGH, "Aggressive followers of every god roam here. Wear the right items and keep food handy.",
+			11578);
+
 		// Raids
 		raid("Chambers of Xeric", 12889, 13136, 13137, 13138, 13139, 13140, 13141, 13145, 13393, 13394, 13395, 13396, 13397, 13401);
 		raid("Theatre of Blood", 12611, 12612, 12613, 12867, 12869, 13122, 13123, 13125, 13379);
@@ -90,6 +98,7 @@ public final class Zones
 		dungeon("Viyeldi Caves", Risk.MEDIUM, QUIET, 9545, 11153);
 		dungeon("Edgeville Dungeon", Risk.MEDIUM, "The north end runs into the Wilderness. Watch where you walk.", 12441, 12442, 12443, 12698);
 		dungeon("Lizardman Temple", Risk.MEDIUM, SLAYER, 5277);
+		dungeon("Slayer Tower", Risk.MEDIUM, SLAYER, 13623, 13723);
 
 		// Minigames where a death is normally safe
 		safe("Fight Caves", 9551);
@@ -124,19 +133,31 @@ public final class Zones
 	 */
 	public static int wildernessLevel(int x, int y)
 	{
-		if (x < 2944 || x > 3391)
-		{
-			return 0;
-		}
-		if (y >= 3520 && y <= 3967)
+		if (x >= 2944 && x <= 3391 && y >= 3520 && y <= 3967)
 		{
 			return (y - 3520) / 8 + 1;
 		}
-		if (y >= 9920 && y <= 10367)
+		// Underground reaches further east than the surface: the Wilderness Slayer Cave runs to about x 3460,
+		// and its northern end is above level 30.
+		if (x >= 2944 && x <= 3460 && y >= 9920 && y <= 10367)
 		{
 			return (y - 9920) / 8 + 1;
 		}
 		return 0;
+	}
+
+	/**
+	 * Reads the level from the game's own "Level: 23" Wilderness text, or returns 0 when there is
+	 * none. The game's number is the truth; coordinates are only a fallback.
+	 */
+	public static int parseWildernessLevel(String widgetText)
+	{
+		if (widgetText == null)
+		{
+			return 0;
+		}
+		Matcher m = LEVEL_TEXT.matcher(widgetText);
+		return m.find() ? Integer.parseInt(m.group(1)) : 0;
 	}
 
 	/** True a few steps south of the Wilderness ditch, so the warning arrives before the first step in. */

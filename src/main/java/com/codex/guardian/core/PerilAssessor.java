@@ -11,6 +11,8 @@ import java.util.List;
 public final class PerilAssessor
 {
 	private static final double SECONDS_PER_TICK = 0.6;
+	/** Twelve seconds of hitpoints left at the current pace: about two food-and-eat cycles. */
+	static final int LETHAL_PACE_TICKS = 20;
 
 	private final int foodReserve;
 
@@ -44,20 +46,27 @@ public final class PerilAssessor
 		{
 			score += add(reasons, "Hitpoints under half", Peril.Tone.WARN, 12);
 		}
-		if (s.getRecentMaxHit() > 0 && s.getHitpoints() <= s.getRecentMaxHit())
+		// Under fire: something is targeting you, or you took damage in the last few ticks.
+		boolean underFire = !s.getAttackers().isEmpty() || s.getDamagePerTick() > 0;
+		int worst = s.getRecentMaxHit();
+		boolean oneHitAway = worst > 0 && s.getHitpoints() <= worst;
+		if (oneHitAway)
 		{
-			score += add(reasons, "One more hit like your last " + s.getRecentMaxHit() + " could end the run", Peril.Tone.BAD, 30);
+			score += underFire
+				? add(reasons, "One more hit of " + worst + " could end the run", Peril.Tone.BAD, 30)
+				: add(reasons, "Eat up: a hit of " + worst + " would end the run", Peril.Tone.WARN, 10);
 		}
 		int secondsLeft = -1;
+		double ticksLeft = Double.POSITIVE_INFINITY;
 		if (s.getDamagePerTick() > 0)
 		{
-			double ticks = s.getHitpoints() / s.getDamagePerTick();
-			secondsLeft = (int) Math.round(ticks * SECONDS_PER_TICK);
-			if (ticks < 10)
+			ticksLeft = s.getHitpoints() / s.getDamagePerTick();
+			secondsLeft = (int) Math.round(ticksLeft * SECONDS_PER_TICK);
+			if (ticksLeft < LETHAL_PACE_TICKS)
 			{
-				score += add(reasons, "At this pace your hitpoints last about " + secondsLeft + "s", Peril.Tone.BAD, 20);
+				score += add(reasons, "At this pace your hitpoints last about " + secondsLeft + "s", Peril.Tone.BAD, 24);
 			}
-			else if (ticks < 25)
+			else if (ticksLeft < 40)
 			{
 				score += add(reasons, "Taking steady damage", Peril.Tone.WARN, 8);
 			}
@@ -165,14 +174,11 @@ public final class PerilAssessor
 				score += add(reasons, "Out of prayer points", Peril.Tone.WARN, 5);
 			}
 		}
-		boolean graceWorks = wild <= 30;
-		for (String grace : r.getSavingGraces())
+		// A ring of life is a comfort, not a plan: one hit from above its threshold skips it entirely,
+		// so it is mentioned but never allowed to talk the read down.
+		if (wild <= 30 && !r.getSavingGraces().isEmpty())
 		{
-			if (graceWorks)
-			{
-				score += add(reasons, grace + " ready to save you", Peril.Tone.GOOD, -8);
-				break;
-			}
+			add(reasons, r.getSavingGraces().get(0) + " worn as a last resort", Peril.Tone.GOOD, 0);
 		}
 
 		// A safe minigame still deserves attention, but its deaths are not the end.
@@ -184,8 +190,11 @@ public final class PerilAssessor
 
 		score = Math.max(0, Math.min(100, score));
 		Peril.Level level = score >= 65 ? Peril.Level.PERIL : score >= 40 ? Peril.Level.DANGER : score >= 18 ? Peril.Level.WARY : Peril.Level.CALM;
-		// Critically low and still being hit is always the top level, whatever else is true.
-		if (risk != Risk.SAFE && hp <= 0.2 && (!attackers.isEmpty() || s.getDamagePerTick() > 0))
+		// Any of these is a death that can happen in the next few ticks, so it is always the top
+		// level whatever else is true: critically low under fire, one hit from dead under fire, or
+		// a pace of damage that empties your hitpoints in seconds.
+		boolean lethal = underFire && (hp <= 0.2 || oneHitAway) || ticksLeft < LETHAL_PACE_TICKS;
+		if (risk != Risk.SAFE && lethal)
 		{
 			level = Peril.Level.PERIL;
 			score = Math.max(score, 65);
