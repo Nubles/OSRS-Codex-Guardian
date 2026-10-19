@@ -14,8 +14,9 @@ import java.util.regex.Pattern;
 /**
  * The check before a trip: are you carrying what gets you home from where you are going? It weighs food,
  * a way out, the protection the destination is known for (dragonfire, venom, smoke, a burning floor), the
- * survival supplies your Quartermaster kit packs, and a last resort, pointing at one waiting in the bank
- * when none is worn. It is general preparation, never advice about how a fight plays out.
+ * survival supplies your Quartermaster kit packs, and a last resort. When the bank is known (seen this session,
+ * or shared by Codex Bank Steward) a missing teleport, protection or kit item says whether one waits there, so
+ * the check is a reminder to grab it rather than a shopping trip. It is general preparation, never advice about how a fight plays out.
  */
 public final class TripCheck
 {
@@ -24,11 +25,24 @@ public final class TripCheck
 	{
 		private final Peril.Tone tone;
 		private final String text;
+		private final boolean inBank;
 
 		Line(Peril.Tone tone, String text)
 		{
+			this(tone, text, false);
+		}
+
+		Line(Peril.Tone tone, String text, boolean inBank)
+		{
 			this.tone = tone;
 			this.text = text;
+			this.inBank = inBank;
+		}
+
+		/** True when the line points at something missing from the pack that waits in the bank. */
+		public boolean pointsAtBank()
+		{
+			return inBank;
 		}
 
 		public Peril.Tone getTone()
@@ -153,6 +167,19 @@ public final class TripCheck
 		return sorted.size() > n ? new ArrayList<>(sorted.subList(0, n)) : sorted;
 	}
 
+	/** True when a missing item on the check waits in the bank: worth a reminder even without a kit. */
+	public boolean pointsAtBank()
+	{
+		for (Line l : lines)
+		{
+			if (l.pointsAtBank())
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
 	/** True when nothing on the check is a problem. */
 	public boolean isClear()
 	{
@@ -212,6 +239,17 @@ public final class TripCheck
 	public static TripCheck build(Zone destination, KitPlan plan, Map<Integer, String> itemNames, List<Supplies.Item> inventory,
 		List<Supplies.Item> worn, Readiness readiness, Map<String, Integer> bankGraces, int foodReserve)
 	{
+		return build(destination, plan, itemNames, inventory, worn, readiness, bankGraces, null, foodReserve);
+	}
+
+	/**
+	 * Builds the check, also knowing the whole bank.
+	 *
+	 * @param bank everything in the bank by name, or null when the bank is not known
+	 */
+	public static TripCheck build(Zone destination, KitPlan plan, Map<Integer, String> itemNames, List<Supplies.Item> inventory,
+		List<Supplies.Item> worn, Readiness readiness, Map<String, Integer> bankGraces, List<Supplies.Item> bank, int foodReserve)
+	{
 		List<Line> lines = new ArrayList<>();
 		List<Supplies.Item> all = new ArrayList<>(inventory);
 		all.addAll(worn);
@@ -236,8 +274,26 @@ public final class TripCheck
 				healing >= foodTarget ? "Food: " + healing + " hp" : "Food: " + healing + " of " + foodTarget + " hp"));
 		}
 
-		lines.add(readiness.hasEscape() ? new Line(Peril.Tone.GOOD, "Way out: " + Advice.shortName(readiness.getBestEscape()))
-			: new Line(Peril.Tone.BAD, readiness.getLawRunes() > 0 ? "Way out: law runes only" : "No teleport out"));
+		if (readiness.hasEscape())
+		{
+			lines.add(new Line(Peril.Tone.GOOD, "Way out: " + Advice.shortName(readiness.getBestEscape())));
+		}
+		else
+		{
+			String banked = bank == null ? null : Supplies.assess(bank, Collections.emptyList(), 99).getBestEscape();
+			if (banked != null)
+			{
+				lines.add(new Line(Peril.Tone.BAD, "No teleport: " + Advice.shortName(banked) + " in the bank", true));
+			}
+			else if (readiness.getLawRunes() > 0)
+			{
+				lines.add(new Line(Peril.Tone.BAD, "Way out: law runes only"));
+			}
+			else
+			{
+				lines.add(new Line(Peril.Tone.BAD, bank == null ? "No teleport out" : "No teleport out, none banked"));
+			}
+		}
 
 		// A protection line already speaks for the kit's matching potion: missing, it says so; carried, the kit
 		// line only adds something when it is short of the doses the kit plans.
@@ -247,7 +303,10 @@ public final class TripCheck
 			for (Ward ward : WARDS.getOrDefault(destination.getName(), Collections.emptyList()))
 			{
 				String found = find(all, ward.items);
-				lines.add(found != null ? new Line(Peril.Tone.GOOD, ward.label + ": " + found) : new Line(Peril.Tone.BAD, ward.missing));
+				int banked = found != null || bank == null ? 0 : count(bank, ward.items);
+				lines.add(found != null ? new Line(Peril.Tone.GOOD, ward.label + ": " + found)
+					: banked > 0 ? new Line(Peril.Tone.BAD, ward.missing + ": " + banked + " in the bank", true)
+					: new Line(Peril.Tone.BAD, ward.missing));
 				if (ward.covers != null)
 				{
 					covered.put(ward.covers, found != null);
@@ -257,7 +316,7 @@ public final class TripCheck
 
 		for (KitPlan.Need n : needs)
 		{
-			Line line = kitLine(n, all, readiness, itemNames);
+			Line line = kitLine(n, all, readiness, itemNames, bank);
 			Boolean wardMet = covered.get(n.getSupply().replace("SUPER_", ""));
 			if (line == null || lines.contains(line) || wardMet != null && (!wardMet || line.getTone() != Peril.Tone.WARN))
 			{
@@ -284,14 +343,15 @@ public final class TripCheck
 					break;
 				}
 			}
-			lines.add(banked != null ? new Line(Peril.Tone.WARN, banked + ": " + count + " in the bank")
+			lines.add(banked != null ? new Line(Peril.Tone.WARN, banked + ": " + count + " in the bank", true)
 				: new Line(Peril.Tone.NOTE, "No ring of life worn"));
 		}
 		return new TripCheck(destination == null ? null : destination.getName(), plan == null ? null : plan.getName(), lines);
 	}
 
 	/** A line for one survival supply the kit packs; boosts and ammunition are Quartermaster's business. */
-	private static Line kitLine(KitPlan.Need n, List<Supplies.Item> all, Readiness readiness, Map<Integer, String> itemNames)
+	private static Line kitLine(KitPlan.Need n, List<Supplies.Item> all, Readiness readiness, Map<Integer, String> itemNames,
+		List<Supplies.Item> bank)
 	{
 		String supply = n.getSupply();
 		int want = n.getPerTrip();
@@ -326,7 +386,19 @@ public final class TripCheck
 				have += item.quantity;
 			}
 		}
-		return have > 0 ? new Line(Peril.Tone.GOOD, name + (have > 1 ? " x" + have : ""))
+		if (have > 0)
+		{
+			return new Line(Peril.Tone.GOOD, name + (have > 1 ? " x" + have : ""));
+		}
+		int banked = 0;
+		for (Supplies.Item item : bank == null ? Collections.<Supplies.Item>emptyList() : bank)
+		{
+			if (item.name != null && item.name.equalsIgnoreCase(name))
+			{
+				banked += item.quantity;
+			}
+		}
+		return banked > 0 ? new Line(Peril.Tone.WARN, name + ": " + banked + " in the bank", true)
 			: new Line(Peril.Tone.WARN, name + ": not packed");
 	}
 
@@ -357,6 +429,25 @@ public final class TripCheck
 			}
 		}
 		return total;
+	}
+
+	/** How many of the items whose names contain one of {@code parts} there are, counting each stack's size. */
+	private static int count(List<Supplies.Item> items, String[] parts)
+	{
+		long total = 0;
+		for (Supplies.Item item : items)
+		{
+			String name = lower(item.name);
+			for (String part : parts)
+			{
+				if (name.contains(part))
+				{
+					total += item.quantity;
+					break;
+				}
+			}
+		}
+		return (int) Math.min(Integer.MAX_VALUE, total);
 	}
 
 	/** The first carried or worn item whose name contains one of {@code parts}, as the game names it. */

@@ -101,7 +101,7 @@ final class WardView
 
 	/**
 	 * The trip check shows while nothing is happening: no attackers, nowhere dangerous, not in the Wilderness,
-	 * and only when there is a trip to check (a Quartermaster kit), or a last resort sitting in the bank while
+	 * and only when there is a trip to check (a Quartermaster kit), or something missing sitting in the bank while
 	 * the pack looks like a fight. A skiller with a ring of life banked is not told daily that they have no food.
 	 */
 	static boolean showTrip(Situation s, TripCheck trip)
@@ -118,14 +118,7 @@ final class WardView
 		{
 			return false;
 		}
-		for (TripCheck.Line line : trip.getLines())
-		{
-			if (line.getText().endsWith("in the bank"))
-			{
-				return true;
-			}
-		}
-		return false;
+		return trip.pointsAtBank();
 	}
 
 	private static Card trip(TripCheck trip)

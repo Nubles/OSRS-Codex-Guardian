@@ -16,6 +16,7 @@ import com.codex.guardian.core.Risk;
 import com.codex.guardian.core.Situation;
 import com.codex.guardian.core.Supplies;
 import com.codex.guardian.core.Threat;
+import com.codex.guardian.core.SharedBank;
 import com.codex.guardian.core.TripCheck;
 import com.codex.guardian.core.Zone;
 import com.codex.guardian.core.Zones;
@@ -171,9 +172,13 @@ public class CodexGuardianPlugin extends Plugin
 	private KitPlan kitPlan;
 	/** Names of the kit's single items, resolved on the client thread when the kit is read. */
 	private final Map<Integer, String> kitItemNames = new HashMap<>();
-	/** Last resorts in the bank by name, from the bank itself this session or else Quartermaster's record. */
+	/** Last resorts in the bank by name, from the bank itself this session, Bank Steward's, or else Quartermaster's record. */
 	private final Map<String, Integer> bankGraces = new LinkedHashMap<>();
 	private boolean bankSeenThisSession;
+	/** The whole bank by item id, from the bank itself this session or Bank Steward's shared copy; null when unknown. */
+	private Map<Integer, Long> bankItems;
+	/** Item names already looked up for the bank, so a withdrawal does not look up the whole bank again. */
+	private final Map<Integer, String> bankNames = new HashMap<>();
 	private List<Supplies.Item> lastInventory = Collections.emptyList();
 	private List<Supplies.Item> lastWorn = Collections.emptyList();
 	private TripCheck trip;
@@ -300,6 +305,8 @@ public class CodexGuardianPlugin extends Plugin
 		kitItemNames.clear();
 		bankGraces.clear();
 		bankSeenThisSession = false;
+		bankItems = null;
+		bankNames.clear();
 		trip = null;
 		tripDirty = true;
 	}
@@ -380,6 +387,12 @@ public class CodexGuardianPlugin extends Plugin
 			clientThread.invokeLater(this::readKit);
 			return;
 		}
+		if (SharedBank.GROUP.equals(event.getGroup()) && SharedBank.KEY.equals(event.getKey()))
+		{
+			// Bank Steward shared a new copy of the bank (or stopped sharing it).
+			clientThread.invokeLater(this::readSharedBank);
+			return;
+		}
 		if (!CodexGuardianConfig.GROUP.equals(event.getGroup()) || JOURNAL_KEY.equals(event.getKey())
 			|| ONE_LIFE_KEY.equals(event.getKey()) || HITS_KEY.equals(event.getKey()))
 		{
@@ -408,7 +421,7 @@ public class CodexGuardianPlugin extends Plugin
 		}
 		else if (event.getContainerId() == InventoryID.BANK && event.getItemContainer() != null)
 		{
-			readBankGraces(event.getItemContainer());
+			readBank(event.getItemContainer());
 		}
 	}
 
@@ -1324,7 +1337,8 @@ public class CodexGuardianPlugin extends Plugin
 				}
 			}
 		}
-		if (!bankSeenThisSession)
+		readSharedBank();
+		if (!bankSeenThisSession && bankItems == null)
 		{
 			bankGraces.clear();
 			if (plan != null)
@@ -1346,6 +1360,36 @@ public class CodexGuardianPlugin extends Plugin
 		tripDirty = true;
 	}
 
+	/**
+	 * Reads the whole bank Codex Bank Steward shares, unless the bank itself was seen this session, which is newer.
+	 * Without Bank Steward (or with its sharing off) the bank stays unknown and the last resorts fall back to
+	 * Quartermaster's record, which {@link #readKit} reads.
+	 */
+	private void readSharedBank()
+	{
+		if (bankSeenThisSession)
+		{
+			return;
+		}
+		String profile = configManager.getRSProfileKey();
+		Map<Integer, Long> shared = profile == null ? null
+			: SharedBank.read(gson, configManager.getConfiguration(SharedBank.GROUP, profile, SharedBank.KEY));
+		boolean had = bankItems != null;
+		bankItems = shared;
+		if (shared != null)
+		{
+			bankGraces.clear();
+			bankGraces.putAll(SharedBank.graces(shared, BANKED_GRACES, BANKED_GRACE_NAMES));
+		}
+		else if (had)
+		{
+			// Sharing stopped: go back to what Quartermaster recorded, if anything.
+			readKit();
+			return;
+		}
+		tripDirty = true;
+	}
+
 	/** Another plugin's saved JSON object, or null when it is missing or not an object. */
 	private JsonObject readJson(String json)
 	{
@@ -1363,16 +1407,18 @@ public class CodexGuardianPlugin extends Plugin
 		}
 	}
 
-	/** Counts the last resorts in the bank while it is open; this beats Quartermaster's older record. */
-	private void readBankGraces(ItemContainer bank)
+	/** Reads the bank while it is open: everything in it, and its last resorts. This beats any shared or older record. */
+	private void readBank(ItemContainer bank)
 	{
 		Map<String, Integer> found = new LinkedHashMap<>();
+		Map<Integer, Long> all = new HashMap<>();
 		for (Item item : bank.getItems())
 		{
 			if (item == null || item.getId() < 0 || item.getQuantity() <= 0)
 			{
 				continue;
 			}
+			all.merge(item.getId(), (long) item.getQuantity(), Long::sum);
 			for (int i = 0; i < BANKED_GRACES.length; i++)
 			{
 				for (int id : BANKED_GRACES[i])
@@ -1386,6 +1432,7 @@ public class CodexGuardianPlugin extends Plugin
 		}
 		bankGraces.clear();
 		bankGraces.putAll(found);
+		bankItems = all;
 		bankSeenThisSession = true;
 		tripDirty = true;
 	}
@@ -1400,7 +1447,9 @@ public class CodexGuardianPlugin extends Plugin
 		tripDirty = false;
 		KitPlan plan = kitPlan;
 		Zone destination = TripCheck.destinationFor(plan == null ? null : plan.getName());
-		TripCheck next = TripCheck.build(destination, plan, kitItemNames, lastInventory, lastWorn, readiness, bankGraces,
+		List<Supplies.Item> bank = SharedBank.byName(bankItems, id -> bankNames.computeIfAbsent(id,
+			i -> client.getItemDefinition(i).getName()));
+		TripCheck next = TripCheck.build(destination, plan, kitItemNames, lastInventory, lastWorn, readiness, bankGraces, bank,
 			config.foodReserve()).withMemory(destination == null ? null
 				: PlaceMemory.lines(journal, hits, destination.getName()));
 		trip = next;
