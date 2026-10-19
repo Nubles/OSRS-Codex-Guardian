@@ -207,4 +207,16 @@ public interface CodexGuardianConfig extends Config
 	{
 		return 20;
 	}
+
+	@ConfigItem(
+		keyName = "nameOnCard",
+		name = "Name on cards",
+		description = "Write your character's name on the seal card; turn off to share it without it",
+		position = 4,
+		section = run
+	)
+	default boolean nameOnCard()
+	{
+		return true;
+	}
 }

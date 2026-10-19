@@ -27,11 +27,16 @@ import com.codex.guardian.overlay.PerilVignette;
 import com.codex.guardian.overlay.WardOverlay;
 import com.codex.guardian.ui.GuardianPanel;
 import com.codex.guardian.ui.Mark;
+import com.codex.guardian.ui.ShareActions;
 import com.codex.guardian.ui.Shield;
 import com.codex.guardian.ui.Theme;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.inject.Provides;
+import java.awt.Toolkit;
+import java.awt.image.BufferedImage;
+import java.io.IOException;
+import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumMap;
@@ -42,6 +47,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ScheduledExecutorService;
+import javax.imageio.ImageIO;
 import javax.inject.Inject;
 import javax.swing.SwingUtilities;
 import net.runelite.api.Actor;
@@ -84,6 +91,7 @@ import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.ui.overlay.OverlayManager;
 import net.runelite.client.util.Text;
+import net.runelite.client.util.Filepath;
 
 @PluginDescriptor(
 	name = "Codex Guardian",
@@ -128,6 +136,9 @@ public class CodexGuardianPlugin extends Plugin
 
 	@Inject
 	private ClientThread clientThread;
+
+	@Inject
+	private ScheduledExecutorService executor;
 
 	@Inject
 	private ClientToolbar clientToolbar;
@@ -235,6 +246,20 @@ public class CodexGuardianPlugin extends Plugin
 		panel = new GuardianPanel(config.foodReserve(), () -> clientThread.invokeLater(this::newRun),
 			value -> clientThread.invokeLater(() -> setOneLife(value)));
 		panel.setOnMarkFallen(at -> clientThread.invokeLater(() -> markFallen(at)));
+		panel.setShare(new ShareActions()
+		{
+			@Override
+			public void save(BufferedImage card, String fileName)
+			{
+				saveCard(card, fileName);
+			}
+
+			@Override
+			public void copy(BufferedImage card)
+			{
+				copyCard(card);
+			}
+		}, config::nameOnCard);
 		navButton = NavigationButton.builder()
 			.tooltip("Codex Guardian")
 			.icon(Shield.icon(16))
@@ -1562,5 +1587,70 @@ public class CodexGuardianPlugin extends Plugin
 		recorder.unmark();
 		saveJournal();
 		publishJournal();
+	}
+
+	/** Asks where to save the seal card (on the Swing thread, where the buttons run), then writes it off that thread. */
+	private void saveCard(BufferedImage card, String fileName)
+	{
+		GuardianPanel view = panel;
+		if (view == null)
+		{
+			return;
+		}
+		List<Filepath> chosen = new Filepath.Chooser()
+			.setIsSave()
+			.setAcceptsFiles()
+			.setDialogTitle("Save seal card")
+			.addExtensionFilter("PNG image", "png")
+			.setDefaultExtension("png")
+			.setFileName(fileName)
+			.showDialog(view);
+		if (chosen == null || chosen.isEmpty())
+		{
+			return;
+		}
+		Filepath target = chosen.get(0);
+		executor.execute(() ->
+		{
+			String note;
+			try (OutputStream out = target.openOutputStream())
+			{
+				ImageIO.write(card, "png", out);
+				note = "Saved as " + target.getFileName() + ".";
+			}
+			catch (IOException e)
+			{
+				note = "The card could not be saved: " + e.getMessage();
+			}
+			String shown = note;
+			SwingUtilities.invokeLater(() ->
+			{
+				GuardianPanel p = panel;
+				if (p != null)
+				{
+					p.shareNote(shown);
+				}
+			});
+		});
+	}
+
+	/** Puts the seal card on the clipboard; the buttons call this on the Swing thread. */
+	private void copyCard(BufferedImage card)
+	{
+		String note;
+		try
+		{
+			Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new ImageTransfer(ImageTransfer.opaque(card)), null);
+			note = "Copied. Paste it anywhere you share pictures.";
+		}
+		catch (IllegalStateException e)
+		{
+			note = "The clipboard is busy, try again in a moment.";
+		}
+		GuardianPanel p = panel;
+		if (p != null)
+		{
+			p.shareNote(note);
+		}
 	}
 }

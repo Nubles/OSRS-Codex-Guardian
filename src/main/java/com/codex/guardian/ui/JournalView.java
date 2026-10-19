@@ -8,6 +8,7 @@ import java.awt.FlowLayout;
 import java.util.List;
 import java.util.function.Function;
 import javax.swing.BoxLayout;
+import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.border.EmptyBorder;
@@ -40,6 +41,16 @@ final class JournalView
 	static StackPanel build(Journal journal, Situation situation, long now, CodexButton newRun, CodexButton oneLifeToggle,
 		long worth, Function<Journal.Entry, CodexButton> fallenButton)
 	{
+		return build(journal, situation, now, newRun, oneLifeToggle, worth, fallenButton, null, null);
+	}
+
+	/**
+	 * @param share     the seal card's save and copy buttons, or null for none
+	 * @param shareNote what became of the last save or copy, or null
+	 */
+	static StackPanel build(Journal journal, Situation situation, long now, CodexButton newRun, CodexButton oneLifeToggle,
+		long worth, Function<Journal.Entry, CodexButton> fallenButton, JComponent share, String shareNote)
+	{
 		boolean oneLife = situation.isOneLife();
 		StackPanel stack = new StackPanel(6, 8);
 		if (journal == null)
@@ -47,7 +58,7 @@ final class JournalView
 			stack.add(waiting());
 			return stack;
 		}
-		stack.add(summary(journal, oneLife, worth, now, newRun));
+		stack.add(summary(journal, oneLife, worth, now, newRun, share, shareNote));
 		if (situation.isLoggedIn())
 		{
 			stack.add(mode(situation, oneLifeToggle));
@@ -85,16 +96,28 @@ final class JournalView
 		return card;
 	}
 
-	/** The run's seal, with the one action that belongs to the run as a whole under it. */
-	private static JPanel summary(Journal journal, boolean oneLife, long worth, long now, CodexButton newRun)
+	/** The run's seal, with what belongs to the run as a whole under it: sharing it, and starting over. */
+	private static JPanel summary(Journal journal, boolean oneLife, long worth, long now, CodexButton newRun, JComponent share,
+		String shareNote)
 	{
 		JPanel holder = new JPanel(new BorderLayout(0, 4));
 		holder.setOpaque(false);
-		holder.add(new RunSeal(journal, oneLife, worth, now), BorderLayout.CENTER);
-		JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+		holder.add(new RunSeal(journal, oneLife, worth, now), BorderLayout.NORTH);
+		JPanel actions = new JPanel(new BorderLayout(6, 0));
 		actions.setOpaque(false);
-		actions.add(newRun);
-		holder.add(actions, BorderLayout.SOUTH);
+		if (share != null)
+		{
+			actions.add(share, BorderLayout.WEST);
+		}
+		JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+		right.setOpaque(false);
+		right.add(newRun);
+		actions.add(right, BorderLayout.CENTER);
+		holder.add(actions, BorderLayout.CENTER);
+		if (shareNote != null)
+		{
+			holder.add(Ui.wrapped(shareNote, Theme.small(), Theme.TEAL, 200), BorderLayout.SOUTH);
+		}
 		return holder;
 	}
 

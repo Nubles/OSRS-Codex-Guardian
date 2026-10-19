@@ -56,6 +56,9 @@ public class GuardianPanel extends PluginPanel
 	/** The unconfirmed death waiting for a second click to be marked as fallen, or -1. */
 	private long markingAt = -1;
 	private long worth = -1;
+	private ShareActions share;
+	private java.util.function.BooleanSupplier nameOnCards = () -> true;
+	private String shareNote;
 
 	/**
 	 * @param onNewRun  called on the Swing thread once the player confirms a fresh run
@@ -224,8 +227,67 @@ public class GuardianPanel extends PluginPanel
 	{
 		journalStale = false;
 		replace(journalView, JournalView.build(journal, situation, System.currentTimeMillis(), newRunButton(), oneLifeButton(), worth,
-			this::fallenButton));
+			this::fallenButton, shareButtons(), shareNote));
 		replace(perils, PerilsView.build(journal, hits));
+	}
+
+	/** Lets the journal save and copy the seal card; names go on it while the option is on. */
+	public void setShare(ShareActions share, java.util.function.BooleanSupplier nameOnCards)
+	{
+		this.share = share;
+		this.nameOnCards = nameOnCards == null ? () -> true : nameOnCards;
+		journalChanged();
+	}
+
+	/** Shows what became of a save or copy under the seal. Swing thread only. */
+	public void shareNote(String note)
+	{
+		shareNote = note;
+		journalChanged();
+	}
+
+	/**
+	 * Save and copy for the seal card, or null when sharing is not set up, there is no run to show yet, or the
+	 * new-run button is asking for its second click and needs the room.
+	 */
+	private JComponent shareButtons()
+	{
+		if (share == null || journal == null || confirming || !situation.isLoggedIn())
+		{
+			return null;
+		}
+		JPanel buttons = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 0, 0));
+		buttons.setOpaque(false);
+		// Short labels, so both fit beside "Start a new run"; the tooltips say what they make.
+		CodexButton save = new CodexButton("Save", false, () -> shareSeal(true));
+		save.setToolTipText("Save the run's seal as a picture to share");
+		CodexButton copy = new CodexButton("Copy", false, () -> shareSeal(false));
+		copy.setToolTipText("Copy the run's seal as a picture, ready to paste");
+		buttons.add(save);
+		buttons.add(javax.swing.Box.createHorizontalStrut(4));
+		buttons.add(copy);
+		return buttons;
+	}
+
+	private void shareSeal(boolean save)
+	{
+		long now = System.currentTimeMillis();
+		java.time.ZoneId zone = java.time.ZoneId.systemDefault();
+		String name = nameOnCards.getAsBoolean() && situation.isLoggedIn() ? situation.getPlayerName() : null;
+		SealShare.Spec spec = SealShare.Spec.of(journal, situation.isOneLife(), worth, name, situation.getMode(), now, zone);
+		if (spec == null || share == null)
+		{
+			return;
+		}
+		java.awt.image.BufferedImage card = SealShare.render(spec);
+		if (save)
+		{
+			share.save(card, SealShare.fileName(now, zone));
+		}
+		else
+		{
+			share.copy(card);
+		}
 	}
 
 	/** The per-account one-life switch, or null for a hardcore account, which is one-life by its nature. */

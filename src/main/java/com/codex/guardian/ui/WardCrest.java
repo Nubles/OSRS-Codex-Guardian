@@ -17,8 +17,8 @@ import javax.swing.JPanel;
 import javax.swing.border.EmptyBorder;
 
 /**
- * The crest at the top of the panel: the hitpoint shield, the account's name and mode,
- * and three ledgers for prayer, the length of the run and the close calls survived.
+ * The crest at the top of the panel: the hitpoint shield, the account's name and mode, and three ledgers for
+ * prayer, run energy and the length of the run. The close calls are the seal's to tell, so they are not repeated here.
  */
 public class WardCrest extends JPanel
 {
@@ -27,7 +27,7 @@ public class WardCrest extends JPanel
 	private final JLabel mode = Ui.label("Not logged in", Theme.small(), Theme.TEXT_MUTED);
 	private final Ledger prayer = new Ledger("Prayer", true);
 	private final Ledger run = new Ledger("This run", false);
-	private final Ledger closeCalls = new Ledger("Close calls", false);
+	private final Ledger energy = new Ledger("Run energy", true);
 	private Peril.Level level = Peril.Level.CALM;
 
 	public WardCrest()
@@ -53,8 +53,8 @@ public class WardCrest extends JPanel
 		ledgers.setOpaque(false);
 		ledgers.setBorder(new EmptyBorder(4, 0, 0, 0));
 		ledgers.add(prayer);
+		ledgers.add(energy);
 		ledgers.add(run);
-		ledgers.add(closeCalls);
 		ledgers.setAlignmentX(LEFT_ALIGNMENT);
 		right.add(ledgers);
 		add(right, BorderLayout.CENTER);
@@ -77,8 +77,9 @@ public class WardCrest extends JPanel
 		{
 			prayer.set("-", 0);
 		}
+		boolean energyKnown = in && s.getRunEnergy() >= 0;
+		energy.set(energyKnown ? s.getRunEnergy() + "%" : "-", energyKnown ? s.getRunEnergy() / 100.0 : 0);
 		run.set(journal == null ? "-" : Format.runTime(journal.getPlayedTicks()), -1);
-		closeCalls.set(journal == null ? "-" : String.valueOf(journal.getCloseCalls()), -1);
 		repaint();
 	}
 
