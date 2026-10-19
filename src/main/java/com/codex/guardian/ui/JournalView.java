@@ -62,7 +62,8 @@ final class JournalView
 		text.add(Ui.label(fallen ? "THE RUN HAS FALLEN" : "THE RUN LIVES", Theme.small(), fallen ? Theme.BLOOD : Theme.GOLD));
 		String began = new SimpleDateFormat("d MMM yyyy", Locale.ENGLISH).format(new Date(journal.getRunStartedAt()));
 		text.add(Ui.label("Begun " + began, Theme.title(), Theme.GOLD_BRIGHT));
-		text.add(Ui.label(Format.duration(journal.getPlayedTicks()) + " played  ·  " + journal.getCloseCalls() + " close calls",
+		text.add(Ui.label(Format.runTime(journal.getPlayedTicks()) + " played  ·  " + journal.getCloseCalls()
+			+ (journal.getCloseCalls() == 1 ? " close call" : " close calls"),
 			Theme.small(), Theme.TEXT_MUTED));
 		card.add(text, BorderLayout.CENTER);
 		JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));

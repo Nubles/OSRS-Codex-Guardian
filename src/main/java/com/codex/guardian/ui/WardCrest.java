@@ -77,7 +77,7 @@ public class WardCrest extends JPanel
 		{
 			prayer.set("-", 0);
 		}
-		run.set(journal == null ? "-" : Format.duration(journal.getPlayedTicks()), -1);
+		run.set(journal == null ? "-" : Format.runTime(journal.getPlayedTicks()), -1);
 		closeCalls.set(journal == null ? "-" : String.valueOf(journal.getCloseCalls()), -1);
 		repaint();
 	}
