@@ -12,6 +12,9 @@ public final class Advice
 	}
 
 	/** What to do now, or null when nothing urgent needs saying. */
+	/** With less prayer than this left, restores included, the advice is to leave before it fails. */
+	static final int PRAYER_LEAVE_SECONDS = 15;
+
 	public static String now(Situation s, Peril p)
 	{
 		if (!s.isLoggedIn() || !p.getLevel().atLeast(Peril.Level.DANGER) || s.risk() == Risk.SAFE)
@@ -59,6 +62,12 @@ public final class Advice
 					: "Run south now";
 			}
 			return s.isTeleblocked() ? "Run: teleblocked, no food" : "Run: no food, no teleport";
+		}
+		// A protection prayer failing mid-fight: once it is gone the blocked hits land, so leave while it holds.
+		int prayerLeft = s.getPrayerLeft();
+		if (s.getPrayer() > 0 && prayerLeft >= 0 && prayerLeft < PRAYER_LEAVE_SECONDS && !s.getAttackers().isEmpty())
+		{
+			return escape ? "Prayer almost out: teleport" : "Prayer almost out: back off";
 		}
 		// Lag in danger: every input lands late, so the way out is worth taking while it still works.
 		if (s.getLag() != Lag.State.STEADY && escape)

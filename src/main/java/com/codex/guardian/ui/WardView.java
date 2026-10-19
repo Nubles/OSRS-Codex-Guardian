@@ -2,6 +2,7 @@ package com.codex.guardian.ui;
 
 import com.codex.guardian.core.Advice;
 import com.codex.guardian.core.Peril;
+import com.codex.guardian.core.PrayerWatch;
 import com.codex.guardian.core.Readiness;
 import com.codex.guardian.core.Risk;
 import com.codex.guardian.core.Situation;
@@ -333,8 +334,20 @@ final class WardView
 			graces.isEmpty() ? "None worn" : wild > 30 ? "Fails above 30" : String.join(", ", graces), null));
 
 		boolean prayerLow = s.getMaxPrayer() > 1 && s.getPrayer() * 4 < s.getMaxPrayer();
-		rows.add(Rows.fact(r.getPrayerDoses() > 0 ? Mark.Kind.GOOD : prayerLow && exposed ? Mark.Kind.WARN : Mark.Kind.NONE, "Prayer",
-			s.getPrayer() + "/" + s.getMaxPrayer() + (r.getPrayerDoses() > 0 ? "  ·  " + r.getPrayerDoses() + " doses" : ""), null));
+		int prayerLeft = s.getPrayerLeft();
+		if (prayerLeft >= 0 && s.getPrayer() > 0)
+		{
+			// Draining: how long it lasts, restore doses included, says more than the dose count.
+			boolean runningLow = prayerLeft < 60 && exposed;
+			rows.add(Rows.fact(runningLow ? (prayerLeft < 20 ? Mark.Kind.BAD : Mark.Kind.WARN) : Mark.Kind.GOOD, "Prayer",
+				s.getPrayer() + "/" + s.getMaxPrayer() + "  ·  " + PrayerWatch.describe(prayerLeft) + " left",
+				runningLow ? (prayerLeft < 20 ? Theme.BLOOD : Theme.EMBER) : null));
+		}
+		else
+		{
+			rows.add(Rows.fact(r.getPrayerDoses() > 0 ? Mark.Kind.GOOD : prayerLow && exposed ? Mark.Kind.WARN : Mark.Kind.NONE, "Prayer",
+				s.getPrayer() + "/" + s.getMaxPrayer() + (r.getPrayerDoses() > 0 ? "  ·  " + r.getPrayerDoses() + " doses" : ""), null));
+		}
 
 		if (s.getLag() != com.codex.guardian.core.Lag.State.STEADY)
 		{

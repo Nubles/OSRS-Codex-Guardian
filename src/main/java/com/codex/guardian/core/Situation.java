@@ -28,6 +28,8 @@ public final class Situation
 	private final int maxHitpoints;
 	private final int prayer;
 	private final int maxPrayer;
+	/** Seconds of prayer left at the measured drain, counting restore doses carried, or -1 when it is not draining. */
+	private final int prayerLeft;
 	private final Toxin toxin;
 	private final Zone zone;
 	private final int wildernessLevel;
@@ -55,6 +57,7 @@ public final class Situation
 		maxHitpoints = b.maxHitpoints;
 		prayer = b.prayer;
 		maxPrayer = b.maxPrayer;
+		prayerLeft = b.prayerLeft;
 		toxin = b.toxin;
 		zone = b.zone;
 		wildernessLevel = b.wildernessLevel;
@@ -130,6 +133,12 @@ public final class Situation
 	public int getMaxPrayer()
 	{
 		return maxPrayer;
+	}
+
+	/** Seconds of prayer left at the drain Guardian measured, restore doses included, or -1 when it is not draining. */
+	public int getPrayerLeft()
+	{
+		return prayerLeft;
 	}
 
 	public Toxin getToxin()
@@ -265,6 +274,7 @@ public final class Situation
 		Situation s = (Situation) o;
 		return loggedIn == s.loggedIn && oneLife == s.oneLife && world == s.world && combatLevel == s.combatLevel
 			&& hitpoints == s.hitpoints && maxHitpoints == s.maxHitpoints && prayer == s.prayer && maxPrayer == s.maxPrayer
+			&& prayerLeft == s.prayerLeft
 			&& wildernessLevel == s.wildernessLevel && nearWilderness == s.nearWilderness && multiCombat == s.multiCombat
 			&& teleblocked == s.teleblocked && tilesToReach == s.tilesToReach && tilesToDitch == s.tilesToDitch
 			&& Double.compare(damagePerTick, s.damagePerTick) == 0 && recentMaxHit == s.recentMaxHit
@@ -277,7 +287,7 @@ public final class Situation
 	public int hashCode()
 	{
 		return Objects.hash(loggedIn, playerName, mode, oneLife, world, combatLevel, hitpoints, maxHitpoints, prayer,
-			maxPrayer, toxin, zone, wildernessLevel, nearWilderness, multiCombat, teleblocked, attackers, damagePerTick, recentMaxHit,
+			maxPrayer, prayerLeft, toxin, zone, wildernessLevel, nearWilderness, multiCombat, teleblocked, attackers, damagePerTick, recentMaxHit,
 			readiness, tilesToReach, tilesToDitch, lag, lagText);
 	}
 
@@ -293,6 +303,7 @@ public final class Situation
 		private int maxHitpoints = 10;
 		private int prayer = 1;
 		private int maxPrayer = 1;
+		private int prayerLeft = -1;
 		private Toxin toxin = Toxin.NONE;
 		private Zone zone;
 		private int wildernessLevel;
@@ -350,6 +361,13 @@ public final class Situation
 		{
 			prayer = current;
 			maxPrayer = max;
+			return this;
+		}
+
+		/** Seconds of prayer left with restores, or -1 when prayer is not draining. */
+		public Builder prayerLeft(int seconds)
+		{
+			prayerLeft = seconds;
 			return this;
 		}
 

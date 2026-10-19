@@ -13,6 +13,8 @@ public final class PerilAssessor
 	private static final double SECONDS_PER_TICK = 0.6;
 	/** Twelve seconds of hitpoints left at the current pace: about two food-and-eat cycles. */
 	static final int LETHAL_PACE_TICKS = 20;
+	/** Prayer that will run out sooner than this, restores included, is worth a word while under fire. */
+	static final int PRAYER_SHORT_SECONDS = 30;
 
 	private final int foodReserve;
 
@@ -194,6 +196,13 @@ public final class PerilAssessor
 			if (risk.atLeast(Risk.HIGH) && s.getMaxPrayer() > 1 && s.getPrayer() == 0)
 			{
 				score += add(reasons, Peril.Topic.KIT, "Out of prayer points", Peril.Tone.WARN, 5);
+			}
+			else if (s.getPrayer() > 0 && s.getPrayerLeft() >= 0 && s.getPrayerLeft() < PRAYER_SHORT_SECONDS && underFire)
+			{
+				// A protection prayer about to fail mid-fight: the hits it was blocking land all at once.
+				boolean soon = s.getPrayerLeft() < PRAYER_SHORT_SECONDS / 3;
+				score += add(reasons, Peril.Topic.VITALS, "Prayer runs out in about " + PrayerWatch.describe(s.getPrayerLeft()),
+					soon ? Peril.Tone.BAD : Peril.Tone.WARN, soon ? 10 : 6);
 			}
 		}
 		// A ring of life is a comfort, not a plan: one hit from above its threshold skips it entirely,

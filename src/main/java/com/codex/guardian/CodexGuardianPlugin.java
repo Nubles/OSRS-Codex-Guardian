@@ -16,6 +16,7 @@ import com.codex.guardian.core.Risk;
 import com.codex.guardian.core.Situation;
 import com.codex.guardian.core.Supplies;
 import com.codex.guardian.core.Threat;
+import com.codex.guardian.core.PrayerWatch;
 import com.codex.guardian.core.Replay;
 import com.codex.guardian.core.SharedBank;
 import com.codex.guardian.core.TripCheck;
@@ -152,6 +153,8 @@ public class CodexGuardianPlugin extends Plugin
 	private final DamageLog damage = new DamageLog();
 	private final CloseCallWatch closeCalls = new CloseCallWatch();
 	private final Lag lag = new Lag();
+	/** How fast prayer is draining, measured from the points shown, for how long it will last. */
+	private final PrayerWatch prayerWatch = new PrayerWatch();
 	/** The last minute of hitpoints, hits, food and potions, cut into a replay when a close call ends or a death comes. */
 	private final Replay.Recorder recorder = new Replay.Recorder();
 	private HitMemory hits = new HitMemory();
@@ -290,6 +293,7 @@ public class CodexGuardianPlugin extends Plugin
 		lastHitSource = null;
 		lag.reset();
 		recorder.clear();
+		prayerWatch.reset();
 		lastLag = Lag.State.STEADY;
 		accountType = -1;
 		lastCombatLevel = -1;
@@ -583,6 +587,10 @@ public class CodexGuardianPlugin extends Plugin
 			.combatLevel(local.getCombatLevel())
 			.hitpoints(client.getBoostedSkillLevel(Skill.HITPOINTS), maxHp)
 			.prayer(client.getBoostedSkillLevel(Skill.PRAYER), client.getRealSkillLevel(Skill.PRAYER));
+		int prayerPoints = client.getBoostedSkillLevel(Skill.PRAYER);
+		int prayerLevel = client.getRealSkillLevel(Skill.PRAYER);
+		prayerWatch.observe(prayerPoints, client.getTickCount());
+		b.prayerLeft(PrayerWatch.rounded(prayerWatch.secondsWithDoses(prayerPoints, prayerLevel, readiness.getPrayerDoses())));
 
 		int type = client.getVarbitValue(VarbitID.IRONMAN);
 		boolean hardcore = type == 3 || type == 5;
