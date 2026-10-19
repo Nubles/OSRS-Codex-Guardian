@@ -17,9 +17,18 @@ public final class Zones
 	private static final String SLAYER = "Aggressive monsters can stack up here. Watch your hitpoints and keep an escape ready.";
 	private static final String QUIET = "Monsters here can still hit hard if you are underlevelled. Keep some food on you.";
 	private static final String SAFE = "Deaths here are normally safe, but check your mode's rules before you rely on that.";
+	/**
+	 * Whether a minigame death on a Hardcore World still costs nothing can't be checked yet. Until it can, Guardian's
+	 * advice fails toward danger: a wrong "safe" costs a run, a wrong "deadly" costs nothing. (The journal does not
+	 * call such a death the end of the run; see {@link Journal#unconfirmedDeath}.)
+	 */
+	static final String UNCONFIRMED = "Normally a safe death, but Guardian can't confirm minigame deaths are safe on "
+		+ "Hardcore Worlds yet, so it treats a death here as the end of the run.";
 	private static final String SKILLING = "A skilling boss. Its damage adds up while you work, so keep food and leave early.";
 
 	private static final Map<Integer, Zone> BY_REGION = new HashMap<>();
+	/** Each safe minigame as it reads on a Hardcore World, by name. */
+	private static final Map<String, Zone> ON_HARDCORE_WORLD = new HashMap<>();
 	private static final Pattern LEVEL_TEXT = Pattern.compile("Level:\\s*(\\d{1,2})");
 
 	static
@@ -101,20 +110,21 @@ public final class Zones
 		dungeon("Slayer Tower", Risk.MEDIUM, SLAYER, 13623, 13723);
 
 		// Minigames where a death is normally safe
-		safe("Fight Caves", 9551);
-		safe("The Inferno", 9043);
-		safe("Fortis Colosseum", 7216);
-		safe("The Gauntlet", 12127, 7512);
-		safe("Corrupted Gauntlet", 7768);
-		safe("Pest Control", 10536);
-		safe("Castle Wars", 9520, 9620);
-		safe("Soul Wars", 8493, 8748, 8749, 9005);
-		safe("Barbarian Assault", 7508, 7509);
-		safe("Nightmare Zone", 9033);
-		safe("Fight Pits", 9552);
-		safe("Emir's Arena", 13362, 13363);
-		safe("Trouble Brewing", 15150);
-		safe("Last Man Standing", 13658, 13659, 13660, 13914, 13915, 13916, 13918, 13919, 13920, 14174, 14175, 14176, 14430, 14431, 14432);
+		// (the second risk is the read on a Hardcore World, where the safe rule can't be confirmed yet)
+		safe("Fight Caves", Risk.HIGH, 9551);
+		safe("The Inferno", Risk.EXTREME, 9043);
+		safe("Fortis Colosseum", Risk.EXTREME, 7216);
+		safe("The Gauntlet", Risk.HIGH, 12127, 7512);
+		safe("Corrupted Gauntlet", Risk.HIGH, 7768);
+		safe("Pest Control", Risk.MEDIUM, 10536);
+		safe("Castle Wars", Risk.MEDIUM, 9520, 9620);
+		safe("Soul Wars", Risk.MEDIUM, 8493, 8748, 8749, 9005);
+		safe("Barbarian Assault", Risk.MEDIUM, 7508, 7509);
+		safe("Nightmare Zone", Risk.MEDIUM, 9033);
+		safe("Fight Pits", Risk.MEDIUM, 9552);
+		safe("Emir's Arena", Risk.MEDIUM, 13362, 13363);
+		safe("Trouble Brewing", Risk.MEDIUM, 15150);
+		safe("Last Man Standing", Risk.MEDIUM, 13658, 13659, 13660, 13914, 13915, 13916, 13918, 13919, 13920, 14174, 14175, 14176, 14430, 14431, 14432);
 	}
 
 	private Zones()
@@ -125,6 +135,55 @@ public final class Zones
 	public static Zone forRegion(int regionId)
 	{
 		return BY_REGION.get(regionId);
+	}
+
+	/**
+	 * The zone as it reads on a Hardcore World. A minigame where a death is normally safe is not taken as safe there
+	 * until the rule can be checked (see {@link #UNCONFIRMED}); every other zone is unchanged.
+	 */
+	public static Zone onHardcoreWorld(Zone zone)
+	{
+		if (zone == null || zone.getKind() != Zone.Kind.SAFE_MINIGAME || zone.getRisk() != Risk.SAFE)
+		{
+			return zone;
+		}
+		Zone unconfirmed = ON_HARDCORE_WORLD.get(zone.getName());
+		return unconfirmed != null ? unconfirmed : new Zone(zone.getName(), Zone.Kind.SAFE_MINIGAME, Risk.MEDIUM, UNCONFIRMED);
+	}
+
+	/** True for a minigame whose safe-death rule Guardian is not relying on, as on a Hardcore World. */
+	public static boolean isUnconfirmedSafe(Zone zone)
+	{
+		return zone != null && zone.getKind() == Zone.Kind.SAFE_MINIGAME && zone.getRisk() != Risk.SAFE;
+	}
+
+	/**
+	 * The known place a name refers to, matched without case: an exact name first, then the longest place
+	 * name that contains it or is contained in it ("Barrows" finds "Barrows crypts", "Vorkath trip" finds
+	 * "Vorkath"). A partial match needs four letters or more, so a stray short word cannot claim a place.
+	 */
+	public static Zone byName(String name)
+	{
+		if (name == null || name.trim().length() < 3)
+		{
+			return null;
+		}
+		String wanted = name.trim().toLowerCase(java.util.Locale.ENGLISH);
+		Zone partial = null;
+		for (Zone zone : BY_REGION.values())
+		{
+			String have = zone.getName().toLowerCase(java.util.Locale.ENGLISH);
+			if (have.equals(wanted))
+			{
+				return zone;
+			}
+			boolean overlaps = wanted.length() >= 4 && have.length() >= 4 && (have.contains(wanted) || wanted.contains(have));
+			if (overlaps && (partial == null || zone.getName().length() > partial.getName().length()))
+			{
+				partial = zone;
+			}
+		}
+		return partial;
 	}
 
 	/**
@@ -144,6 +203,26 @@ public final class Zones
 			return (y - 9920) / 8 + 1;
 		}
 		return 0;
+	}
+
+	/**
+	 * Tiles to walk due south from a Wilderness coordinate until the level is {@code level} or lower, where 0
+	 * means out of the Wilderness altogether. 0 when already there; -1 when the coordinate is not on the
+	 * Wilderness map, so no distance can be promised.
+	 *
+	 * <p>Underground (the Revenant Caves, the Wilderness Slayer Cave and the other dungeons) a level line can
+	 * still be walked to, but there is no ditch to the south: the way out is a ladder or a cave mouth, so the
+	 * distance out of the Wilderness is -1 there.
+	 */
+	public static int tilesSouthTo(int x, int y, int level)
+	{
+		if (wildernessLevel(x, y) <= 0 || level < 0 || level == 0 && y >= 9920)
+		{
+			return -1;
+		}
+		// Level n covers eight rows of tiles from the ditch; the last row of level n is base + 8n - 1.
+		int base = y >= 9920 ? 9920 : 3520;
+		return Math.max(0, y - (base + 8 * level - 1));
 	}
 
 	/**
@@ -172,7 +251,7 @@ public final class Zones
 		String advice;
 		if (level > 30)
 		{
-			advice = "Level " + level + ". No teleport works up here and other players can attack you. Walk south.";
+			advice = "Level " + level + ". No teleport works up here and other players can attack you. Get down to level 30.";
 		}
 		else if (level > 20)
 		{
@@ -205,9 +284,10 @@ public final class Zones
 		put(new Zone(name, Zone.Kind.DUNGEON, risk, advice), regions);
 	}
 
-	private static void safe(String name, int... regions)
+	private static void safe(String name, Risk onHardcoreWorld, int... regions)
 	{
 		put(new Zone(name, Zone.Kind.SAFE_MINIGAME, Risk.SAFE, SAFE), regions);
+		ON_HARDCORE_WORLD.put(name, new Zone(name, Zone.Kind.SAFE_MINIGAME, onHardcoreWorld, UNCONFIRMED));
 	}
 
 	private static void put(Zone zone, int... regions)

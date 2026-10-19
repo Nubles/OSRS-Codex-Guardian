@@ -54,6 +54,13 @@ public interface CodexGuardianConfig extends Config
 	)
 	String run = "run";
 
+	@ConfigSection(
+		name = "Cards",
+		description = "What goes on the seal card you save or copy",
+		position = 3
+	)
+	String cards = "cards";
+
 	@ConfigItem(
 		keyName = "plaqueMode",
 		name = "Show plaque",
@@ -81,7 +88,7 @@ public interface CodexGuardianConfig extends Config
 	@ConfigItem(
 		keyName = "perilVignette",
 		name = "Peril glow",
-		description = "Pulses the edges of the game view red while Guardian reads peril",
+		description = "Pulses the edges of the game view red while you are in peril",
 		position = 3,
 		section = inGame
 	)
@@ -153,11 +160,28 @@ public interface CodexGuardianConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "notifyLag",
+		name = "Notify lag in danger",
+		description = "Sends a notification when game ticks start arriving late while something can hurt you",
+		position = 6,
+		section = alerts
+	)
+	default boolean notifyLag()
+	{
+		return true;
+	}
+
+	/**
+	 * The old setting shared by every account. One-life is now chosen per account in the panel's Journal tab;
+	 * this stays, hidden, so accounts played under it carry it over once. See {@code OneLife}.
+	 */
+	@ConfigItem(
 		keyName = "oneLife",
 		name = "One-life account",
-		description = "Treat this account as having one life even if it is not a hardcore ironman, for example on Hardcore Worlds",
+		description = "Replaced by the per-account choice in the Guardian panel's Journal tab",
 		position = 1,
-		section = run
+		section = run,
+		hidden = true
 	)
 	default boolean oneLife()
 	{
@@ -189,5 +213,29 @@ public interface CodexGuardianConfig extends Config
 	default int closeCallPercent()
 	{
 		return 20;
+	}
+
+	@ConfigItem(
+		keyName = "nameOnCard",
+		name = "Name on cards",
+		description = "Write your character's name on the seal card; turn off to share it without it",
+		position = 1,
+		section = cards
+	)
+	default boolean nameOnCard()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "worthOnCard",
+		name = "Worth on cards",
+		description = "Write your account's worth from Codex Ledger on the seal card; the seal in the panel shows it either way",
+		position = 2,
+		section = cards
+	)
+	default boolean worthOnCard()
+	{
+		return false;
 	}
 }

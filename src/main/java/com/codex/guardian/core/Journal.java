@@ -23,7 +23,14 @@ public final class Journal
 		DISCONNECT,
 		MILESTONE,
 		/** A death in a safe minigame: worth remembering, but it costs nothing. */
-		SAFE_DEATH
+		SAFE_DEATH,
+		/** Lag or a freeze while something could hurt you. */
+		LAG,
+		/**
+		 * A death in a minigame on a Hardcore World, where nobody can yet confirm the minigame is still safe: it does not
+		 * end the run unless the player marks it as fallen.
+		 */
+		UNCONFIRMED_DEATH
 	}
 
 	public static final class Entry
@@ -32,6 +39,8 @@ public final class Journal
 		Type type;
 		String title;
 		String detail;
+		/** The seconds around a close call or before a death, tick by tick; absent on older entries. */
+		Replay replay;
 
 		Entry(long at, Type type, String title, String detail)
 		{
@@ -59,6 +68,12 @@ public final class Journal
 		public String getDetail()
 		{
 			return detail;
+		}
+
+		/** The replay to draw, or null when there is none or a saved one is damaged. */
+		public Replay getReplay()
+		{
+			return replay != null && replay.isValid() ? replay : null;
 		}
 	}
 
@@ -91,6 +106,10 @@ public final class Journal
 	}
 
 	static final int MAX_ENTRIES = 250;
+	/** A hundred years of play in game ticks: more than this is damage, not a run. */
+	static final long MAX_TICKS = 100L * 365 * 24 * 6000;
+	/** Replays are kept on this many of the newest entries that have one, so the save stays small (about 300 bytes each). */
+	static final int MAX_REPLAYS = 30;
 	/** Re-entering the same zone within this long does not write a new entry. */
 	static final long ZONE_REPEAT_MS = 30 * 60 * 1000L;
 
@@ -101,7 +120,11 @@ public final class Journal
 	int deaths;
 	/** Deaths in safe minigames, which do not end a run. */
 	int safeDeaths;
+	/** Minigame deaths on a Hardcore World not yet marked as the end of the run. */
+	int unconfirmedDeaths;
 	int disconnects;
+	/** Bouts of lag survived while something could hurt you. */
+	int lagSpikes;
 	boolean statusLost;
 	/** Set once Guardian has seen this account as hardcore, so a loss of status while away is still noticed. */
 	boolean hardcoreSeen;
@@ -110,11 +133,50 @@ public final class Journal
 	Hit biggestHit;
 	Map<String, Integer> damageBySource = new LinkedHashMap<>();
 	Map<String, Integer> closeCallsByPlace = new LinkedHashMap<>();
+	/** The lowest hitpoints of any close call at each place, keyed like {@link #closeCallsByPlace}. */
+	Map<String, Integer> lowestByPlace = new LinkedHashMap<>();
 	List<Entry> entries = new ArrayList<>();
 
-	/** Gson leaves fields it did not find as null; this puts them back. */
+	/**
+	 * Reads a saved journal, keeping every field and entry that reads on its own: one odd value never costs the run.
+	 * Null with nothing saved, or with nothing in it readable; the result says when anything was left out.
+	 */
+	public static SavedJson.Read<Journal> load(com.google.gson.Gson gson, String json)
+	{
+		SavedJson.Read<Journal> read = SavedJson.read(gson, json, Journal.class);
+		Journal journal = read.getValue();
+		if (journal == null)
+		{
+			return read;
+		}
+		// An entry of a kind this version does not know (from a newer Guardian) reads with no kind and is dropped by
+		// the repair; flagged so the saved text is kept aside rather than lost at the next save.
+		boolean unknown = journal.entries != null && journal.entries.stream().anyMatch(e -> e != null && e.type == null);
+		// More entries than this version keeps (a newer one may keep more): the repair trims them, so keep the text.
+		boolean trimmed = journal.entries != null && journal.entries.size() > MAX_ENTRIES;
+		return new SavedJson.Read<>(journal.repair(), read.isDamaged() || unknown || trimmed);
+	}
+
+	/**
+	 * Gson leaves fields it did not find as null; this puts them back, and brings figures no run could reach
+	 * (negative counts, centuries of play) back to sense.
+	 */
 	public Journal repair()
 	{
+		playedTicks = Math.max(0, Math.min(MAX_TICKS, playedTicks));
+		dangerTicks = Math.max(0, Math.min(playedTicks, dangerTicks));
+		closeCalls = Math.max(0, closeCalls);
+		deaths = Math.max(0, deaths);
+		safeDeaths = Math.max(0, safeDeaths);
+		unconfirmedDeaths = Math.max(0, unconfirmedDeaths);
+		disconnects = Math.max(0, disconnects);
+		lagSpikes = Math.max(0, lagSpikes);
+		lowestHitpoints = Math.max(-1, lowestHitpoints);
+		runStartedAt = Math.max(0, runStartedAt);
+		if (biggestHit != null && biggestHit.amount <= 0)
+		{
+			biggestHit = null;
+		}
 		if (damageBySource == null)
 		{
 			damageBySource = new LinkedHashMap<>();
@@ -127,17 +189,31 @@ public final class Journal
 		{
 			entries = new ArrayList<>();
 		}
+		if (lowestByPlace == null)
+		{
+			lowestByPlace = new LinkedHashMap<>();
+		}
+		lowestByPlace.values().removeIf(v -> v == null || v < 0);
+		damageBySource.entrySet().removeIf(e -> e.getKey() == null || e.getValue() == null || e.getValue() <= 0);
 		entries.removeIf(e -> e == null || e.type == null);
+		for (Entry e : entries)
+		{
+			if (e.replay != null && !e.replay.isValid())
+			{
+				e.replay = null;
+			}
+		}
 		// Older journals split Wilderness close calls by level; one row for the Wilderness ranks it honestly.
 		Map<String, Integer> places = new LinkedHashMap<>();
 		closeCallsByPlace.forEach((place, count) ->
 		{
-			if (place != null && count != null)
+			if (place != null && count != null && count > 0)
 			{
 				places.merge(area(place), count, Integer::sum);
 			}
 		});
 		closeCallsByPlace = places;
+		trim();
 		return this;
 	}
 
@@ -183,16 +259,23 @@ public final class Journal
 
 	public void closeCall(int lowest, int max, String place, String source, long now)
 	{
+		closeCall(lowest, max, place, source, null, now);
+	}
+
+	/** Records a close call survived, with its replay when one was recorded. */
+	public void closeCall(int lowest, int max, String place, String source, Replay replay, long now)
+	{
 		closeCalls++;
 		String where = place == null ? "Gielinor" : place;
 		closeCallsByPlace.merge(area(where), 1, Integer::sum);
+		lowestByPlace.merge(area(where), lowest, Math::min);
 		if (lowestHitpoints < 0 || lowest < lowestHitpoints)
 		{
 			lowestHitpoints = lowest;
 			lowestPlace = where;
 		}
 		String detail = "Down to " + lowest + "/" + max + " hitpoints " + at(where) + (source != null ? ", against " + source : "");
-		add(now, Type.CLOSE_CALL, "Survived a close call", detail);
+		add(now, Type.CLOSE_CALL, "Survived a close call", detail, replay);
 	}
 
 	/**
@@ -202,15 +285,62 @@ public final class Journal
 	 */
 	public void death(String place, String source, boolean oneLife, boolean safe, long now)
 	{
+		death(place, source, oneLife, safe, null, now);
+	}
+
+	/** Records a death with the replay of the seconds before it, when one was recorded. */
+	public void death(String place, String source, boolean oneLife, boolean safe, Replay replay, long now)
+	{
 		String detail = (place == null ? "Somewhere in Gielinor" : capitalise(at(place))) + (source != null ? ", to " + source : "");
 		if (safe)
 		{
 			safeDeaths++;
-			add(now, Type.SAFE_DEATH, "A safe death", detail);
+			add(now, Type.SAFE_DEATH, "A safe death", detail, replay);
 			return;
 		}
 		deaths++;
-		add(now, Type.DEATH, oneLife ? "The run has fallen" : "Died", detail);
+		add(now, Type.DEATH, oneLife ? "The run has fallen" : "Died", detail, replay);
+	}
+
+	/** Title of a minigame death on a Hardcore World until the player says whether it ended the run. */
+	public static final String UNCONFIRMED_TITLE = "Unconfirmed death";
+
+	/**
+	 * Records a minigame death on a Hardcore World. Whether such a death is still safe there can't be confirmed, so it
+	 * neither ends the run nor counts as safe: the player can mark it as fallen with {@link #markFallen}.
+	 */
+	public void unconfirmedDeath(String place, String source, Replay replay, long now)
+	{
+		String detail = (place == null ? "Somewhere in Gielinor" : capitalise(at(place))) + (source != null ? ", to " + source : "");
+		unconfirmedDeaths++;
+		add(now, Type.UNCONFIRMED_DEATH, UNCONFIRMED_TITLE, detail, replay);
+	}
+
+	/**
+	 * The player says the unconfirmed death recorded at this moment ended the run: it becomes a death like any other.
+	 *
+	 * @return true when such an entry was found and changed
+	 */
+	public boolean markFallen(long at)
+	{
+		for (int i = entries.size() - 1; i >= 0; i--)
+		{
+			Entry e = entries.get(i);
+			if (e.type == Type.UNCONFIRMED_DEATH && e.at == at)
+			{
+				e.type = Type.DEATH;
+				e.title = "The run has fallen";
+				unconfirmedDeaths = Math.max(0, unconfirmedDeaths - 1);
+				deaths++;
+				return true;
+			}
+		}
+		return false;
+	}
+
+	public int getUnconfirmedDeaths()
+	{
+		return unconfirmedDeaths;
 	}
 
 	/** Notes that the account is hardcore right now. */
@@ -243,6 +373,32 @@ public final class Journal
 	{
 		disconnects++;
 		add(now, Type.DISCONNECT, "Disconnected in danger", place == null ? null : capitalise(at(place)));
+	}
+
+	/** Notes a bout of lag survived where something could hurt you. */
+	public void lag(String what, String place, long now)
+	{
+		lagSpikes++;
+		add(now, Type.LAG, "Lag in danger", what + (place == null ? "" : " " + at(place)));
+	}
+
+	/**
+	 * What the journal remembers about a place, for a briefing at its door: "2 close calls here, 4 hp low".
+	 * Null when nothing has happened there.
+	 */
+	public String memoryOf(String place)
+	{
+		if (place == null)
+		{
+			return null;
+		}
+		Integer count = closeCallsByPlace.get(area(place));
+		if (count == null || count <= 0)
+		{
+			return null;
+		}
+		Integer lowest = lowestByPlace.get(area(place));
+		return (count == 1 ? "A close call here" : count + " close calls here") + (lowest != null ? ", " + lowest + " hp low" : "");
 	}
 
 	/** "in the Wilderness level 20", "at Vorkath": the Wilderness is a region, everything else a place you stand at. */
@@ -312,22 +468,57 @@ public final class Journal
 
 	private void add(long at, Type type, String title, String detail)
 	{
-		entries.add(new Entry(at, type, title, detail));
-		while (entries.size() > MAX_ENTRIES)
+		add(at, type, title, detail, null);
+	}
+
+	private void add(long at, Type type, String title, String detail, Replay replay)
+	{
+		Entry entry = new Entry(at, type, title, detail);
+		entry.replay = replay != null && replay.isValid() ? replay : null;
+		entries.add(entry);
+		trim();
+	}
+
+	/**
+	 * Keeps replays on only the newest {@link #MAX_REPLAYS} entries (deaths keep theirs), and at most
+	 * {@link #MAX_ENTRIES} entries: the first entry, deaths and status changes stay, and the oldest of the rest go.
+	 * One pass, so a damaged journal of thousands of entries is trimmed at once.
+	 */
+	private void trim()
+	{
+		int kept = 0;
+		for (int i = entries.size() - 1; i >= 0; i--)
 		{
-			// Keep the first entry, deaths and status changes; drop the oldest of the rest.
-			int drop = -1;
-			for (int i = 1; i < entries.size(); i++)
+			Entry e = entries.get(i);
+			// A death keeps its replay for as long as the entry lasts; it is the one most worth reading.
+			if (e.replay != null && e.type != Type.DEATH && e.type != Type.UNCONFIRMED_DEATH && ++kept > MAX_REPLAYS)
 			{
-				Type t = entries.get(i).type;
-				if (t != Type.DEATH && t != Type.STATUS_LOST)
-				{
-					drop = i;
-					break;
-				}
+				e.replay = null;
 			}
-			entries.remove(drop < 0 ? 0 : drop);
 		}
+		int excess = entries.size() - MAX_ENTRIES;
+		if (excess <= 0)
+		{
+			return;
+		}
+		List<Entry> out = new ArrayList<>(MAX_ENTRIES + 1);
+		for (int i = 0; i < entries.size(); i++)
+		{
+			Type t = entries.get(i).type;
+			boolean keep = i == 0 || t == Type.DEATH || t == Type.STATUS_LOST || t == Type.UNCONFIRMED_DEATH;
+			if (!keep && excess > 0)
+			{
+				excess--;
+				continue;
+			}
+			out.add(entries.get(i));
+		}
+		// Only when deaths and status changes alone are too many: the oldest go.
+		while (out.size() > MAX_ENTRIES)
+		{
+			out.remove(0);
+		}
+		entries = out;
 	}
 
 	public long getRunStartedAt()
@@ -363,6 +554,11 @@ public final class Journal
 	public int getDisconnects()
 	{
 		return disconnects;
+	}
+
+	public int getLagSpikes()
+	{
+		return lagSpikes;
 	}
 
 	public boolean isStatusLost()

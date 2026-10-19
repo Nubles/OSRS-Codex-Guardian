@@ -18,6 +18,8 @@ public final class Readiness
 	private final int prayerDoses;
 	private final int antipoisonDoses;
 	private final int antivenomDoses;
+	/** Doses of anything that gives run energy back: stamina, super energy and energy potions and mixes. */
+	private final int energyDoses;
 
 	private Readiness(Builder b)
 	{
@@ -31,6 +33,7 @@ public final class Readiness
 		prayerDoses = b.prayerDoses;
 		antipoisonDoses = b.antipoisonDoses;
 		antivenomDoses = b.antivenomDoses;
+		energyDoses = b.energyDoses;
 	}
 
 	public static Readiness empty()
@@ -101,6 +104,11 @@ public final class Readiness
 		return antivenomDoses;
 	}
 
+	public int getEnergyDoses()
+	{
+		return energyDoses;
+	}
+
 	@Override
 	public boolean equals(Object o)
 	{
@@ -112,14 +120,14 @@ public final class Readiness
 		return foodCount == r.foodCount && foodHealing == r.foodHealing && Objects.equals(bestEscape, r.bestEscape)
 			&& escapeMaxWilderness == r.escapeMaxWilderness && escapeCount == r.escapeCount && lawRunes == r.lawRunes
 			&& savingGraces.equals(r.savingGraces) && prayerDoses == r.prayerDoses
-			&& antipoisonDoses == r.antipoisonDoses && antivenomDoses == r.antivenomDoses;
+			&& antipoisonDoses == r.antipoisonDoses && antivenomDoses == r.antivenomDoses && energyDoses == r.energyDoses;
 	}
 
 	@Override
 	public int hashCode()
 	{
 		return Objects.hash(foodCount, foodHealing, bestEscape, escapeMaxWilderness, escapeCount, lawRunes, savingGraces,
-			prayerDoses, antipoisonDoses, antivenomDoses);
+			prayerDoses, antipoisonDoses, antivenomDoses, energyDoses);
 	}
 
 	public static final class Builder
@@ -134,6 +142,13 @@ public final class Readiness
 		private int prayerDoses;
 		private int antipoisonDoses;
 		private int antivenomDoses;
+		private int energyDoses;
+
+		public Builder energyDoses(int doses)
+		{
+			energyDoses += doses;
+			return this;
+		}
 
 		public Builder food(int count, int healing)
 		{

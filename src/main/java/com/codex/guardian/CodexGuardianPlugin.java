@@ -3,32 +3,54 @@ package com.codex.guardian;
 import com.codex.guardian.core.Advice;
 import com.codex.guardian.core.CloseCallWatch;
 import com.codex.guardian.core.DamageLog;
+import com.codex.guardian.core.HitMemory;
 import com.codex.guardian.core.Journal;
+import com.codex.guardian.core.KitPlan;
+import com.codex.guardian.core.Lag;
+import com.codex.guardian.core.OneLife;
 import com.codex.guardian.core.Peril;
 import com.codex.guardian.core.PerilAssessor;
+import com.codex.guardian.core.PlaceMemory;
 import com.codex.guardian.core.Readiness;
 import com.codex.guardian.core.Risk;
 import com.codex.guardian.core.Situation;
 import com.codex.guardian.core.Supplies;
 import com.codex.guardian.core.Threat;
+import com.codex.guardian.core.PrayerWatch;
+import com.codex.guardian.core.Replay;
+import com.codex.guardian.core.LedgerWorth;
+import com.codex.guardian.core.SavedJson;
+import com.codex.guardian.core.SharedBank;
+import com.codex.guardian.core.TripCheck;
 import com.codex.guardian.core.Zone;
 import com.codex.guardian.core.Zones;
 import com.codex.guardian.overlay.PerilVignette;
 import com.codex.guardian.overlay.WardOverlay;
 import com.codex.guardian.ui.GuardianPanel;
 import com.codex.guardian.ui.Mark;
+import com.codex.guardian.ui.ShareActions;
 import com.codex.guardian.ui.Shield;
 import com.codex.guardian.ui.Theme;
 import com.google.gson.Gson;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import com.google.inject.Provides;
+import java.awt.Toolkit;
+import java.awt.image.BufferedImage;
+import java.io.IOException;
+import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ScheduledExecutorService;
+import javax.imageio.ImageIO;
 import javax.inject.Inject;
 import javax.swing.SwingUtilities;
 import net.runelite.api.Actor;
@@ -49,7 +71,10 @@ import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.HitsplatApplied;
 import net.runelite.api.events.ItemContainerChanged;
+import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.events.StatChanged;
+import net.runelite.api.events.WidgetClosed;
+import net.runelite.api.gameval.ItemID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.InventoryID;
@@ -67,15 +92,35 @@ import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.ui.overlay.OverlayManager;
+import net.runelite.client.util.Text;
+import net.runelite.client.util.Filepath;
 
 @PluginDescriptor(
 	name = "Codex Guardian",
-	description = "A companion for one-life accounts: risk warnings, supply checks, a run journal and death-risk stats",
-	tags = {"hardcore", "hcim", "safety", "risk", "warning", "journal", "death", "codex"}
+	description = "A companion for one-life accounts: danger warnings, food and escape checks, a run journal and death-risk stats",
+	tags = {"hardcore", "hcim", "hcgim", "hcw", "safety", "risk", "warning", "journal", "death", "codex"}
 )
 public class CodexGuardianPlugin extends Plugin
 {
 	private static final String JOURNAL_KEY = "journal";
+	/** The hardest each monster has hit this account, per profile; kept apart from the journal so it outlives a new run. */
+	static final String HITS_KEY = "hitMemory";
+	/** A lag warning comes back at most once a minute, so a bad evening is not a stream of notifications. */
+	private static final int LAG_COOLDOWN_TICKS = 100;
+	/** Hits this many ticks after using an item that hurts are not credited to a monster. */
+	private static final int SELF_HARM_TICKS = 2;
+	/** This account's own one-life choice, "true" or "false"; absent until the account has one. */
+	static final String ONE_LIFE_KEY = "oneLifeAccount";
+	/** Added to a key's name to keep aside a saved value that could not be read in full. */
+	static final String UNREADABLE = "Unreadable";
+	/** Codex Quartermaster's saved data, read only, for the kit you packed and what your bank holds. */
+	static final String QUARTERMASTER_GROUP = "codexquartermaster";
+	static final String QUARTERMASTER_KEY = "quarters";
+	/** Quartermaster's kits in the shape it documents for other plugins; preferred, with {@code quarters} beside it. */
+	static final String QUARTERMASTER_KITS_KEY = "kitsV1";
+	/** Last resorts worth pointing out in the bank, by the item ids Quartermaster's bank record uses. */
+	private static final int[][] BANKED_GRACES = {{ItemID.RING_OF_LIFE}, {ItemID.JEWL_NECKLACE_OF_PHOENIX}};
+	private static final String[] BANKED_GRACE_NAMES = {"Ring of life", "Phoenix necklace"};
 	/** Save the journal about once a minute while playing, and at every important moment. */
 	private static final int SAVE_TICKS = 100;
 	/** The journal's run time and danger time tick constantly; send the panel a fresh copy every half minute. */
@@ -95,6 +140,9 @@ public class CodexGuardianPlugin extends Plugin
 
 	@Inject
 	private ClientThread clientThread;
+
+	@Inject
+	private ScheduledExecutorService executor;
 
 	@Inject
 	private ClientToolbar clientToolbar;
@@ -120,6 +168,17 @@ public class CodexGuardianPlugin extends Plugin
 	private final WardOverlay overlay = new WardOverlay();
 	private final DamageLog damage = new DamageLog();
 	private final CloseCallWatch closeCalls = new CloseCallWatch();
+	private final Lag lag = new Lag();
+	/** How fast prayer is draining, measured from the points shown, for how long it will last. */
+	private final PrayerWatch prayerWatch = new PrayerWatch();
+	/** The last minute of hitpoints, hits, food and potions, cut into a replay when a close call ends or a death comes. */
+	private final Replay.Recorder recorder = new Replay.Recorder();
+	private HitMemory hits = new HitMemory();
+	private boolean hitsChanged;
+	private Lag.State lastLag = Lag.State.STEADY;
+	/** The tick an item that hurts to use (a divine potion, a rock cake) was last used; see {@link HitMemory#hurtsToUse}. */
+	private int selfHarmTick = Integer.MIN_VALUE / 2;
+	private int lagCooldown;
 	private final Map<Skill, Integer> levels = new EnumMap<>(Skill.class);
 
 	private PerilAssessor assessor;
@@ -129,6 +188,25 @@ public class CodexGuardianPlugin extends Plugin
 	private Journal journal;
 	private String journalProfile;
 	private boolean journalChanged;
+	/** This account's one-life choice; false until a profile is loaded. */
+	private boolean accountOneLife;
+	/** The kit chosen in Codex Quartermaster and its bank record, or null without one. */
+	private KitPlan kitPlan;
+	/** Names of the kit's single items, resolved on the client thread when the kit is read. */
+	private final Map<Integer, String> kitItemNames = new HashMap<>();
+	/** Last resorts in the bank by name, from the bank itself this session, Bank Steward's, or else Quartermaster's record. */
+	private final Map<String, Integer> bankGraces = new LinkedHashMap<>();
+	private boolean bankSeenThisSession;
+	/** The whole bank by item id, from the bank itself this session or Bank Steward's shared copy; null when unknown. */
+	private Map<Integer, Long> bankItems;
+	/** Item names already looked up for the bank, so a withdrawal does not look up the whole bank again. */
+	private final Map<Integer, String> bankNames = new HashMap<>();
+	private List<Supplies.Item> lastInventory = Collections.emptyList();
+	private List<Supplies.Item> lastWorn = Collections.emptyList();
+	private TripCheck trip;
+	private boolean tripDirty = true;
+	/** The bank just closed; brief the trip check on the next tick if the pack looks like a fight. */
+	private boolean tripBriefPending;
 	private int ticksSinceSave;
 	private int ticksSincePublish;
 
@@ -169,7 +247,23 @@ public class CodexGuardianPlugin extends Plugin
 	protected void startUp()
 	{
 		assessor = new PerilAssessor(config.foodReserve());
-		panel = new GuardianPanel(config.foodReserve(), () -> clientThread.invokeLater(this::newRun));
+		panel = new GuardianPanel(config.foodReserve(), () -> clientThread.invokeLater(this::newRun),
+			value -> clientThread.invokeLater(() -> setOneLife(value)));
+		panel.setOnMarkFallen(at -> clientThread.invokeLater(() -> markFallen(at)));
+		panel.setShare(new ShareActions()
+		{
+			@Override
+			public void save(BufferedImage card, String fileName)
+			{
+				saveCard(card, fileName);
+			}
+
+			@Override
+			public void copy(BufferedImage card)
+			{
+				copyCard(card);
+			}
+		}, config::nameOnCard, config::worthOnCard);
 		navButton = NavigationButton.builder()
 			.tooltip("Codex Guardian")
 			.icon(Shield.icon(16))
@@ -196,6 +290,7 @@ public class CodexGuardianPlugin extends Plugin
 			saveJournal();
 			journal = null;
 			journalProfile = null;
+			forgetProfile();
 		});
 		overlayManager.remove(overlay);
 		overlayManager.remove(vignette);
@@ -227,9 +322,33 @@ public class CodexGuardianPlugin extends Plugin
 		lastLevel = Peril.Level.CALM;
 		lowHitpointsNotified = false;
 		lastHitSource = null;
+		lag.reset();
+		recorder.clear();
+		prayerWatch.reset();
+		lastLag = Lag.State.STEADY;
 		accountType = -1;
 		lastCombatLevel = -1;
 		settled = false;
+		trip = null;
+		tripDirty = true;
+		tripBriefPending = false;
+	}
+
+	/** Forgets everything read for the previous account: its one-life choice, its kit and its bank. */
+	private void forgetProfile()
+	{
+		accountOneLife = false;
+		hits = new HitMemory();
+		hitsChanged = false;
+		kitPlan = null;
+		kitItemNames.clear();
+		bankGraces.clear();
+		bankSeenThisSession = false;
+		bankItems = null;
+		bankNames.clear();
+		trip = null;
+		tripDirty = true;
+		publishWorth(-1);
 	}
 
 	@Subscribe
@@ -278,6 +397,11 @@ public class CodexGuardianPlugin extends Plugin
 		{
 			readinessDirty = true;
 		}
+		else if (state == GameState.LOADING)
+		{
+			// A region load holds the next tick back on purpose; that pause is not lag.
+			lag.skip();
+		}
 	}
 
 	@Subscribe
@@ -286,6 +410,7 @@ public class CodexGuardianPlugin extends Plugin
 		saveJournal();
 		journal = null;
 		journalProfile = null;
+		forgetProfile();
 		if (client.getGameState() == GameState.LOGGED_IN)
 		{
 			loadJournal();
@@ -295,7 +420,27 @@ public class CodexGuardianPlugin extends Plugin
 	@Subscribe
 	public void onConfigChanged(ConfigChanged event)
 	{
-		if (!CodexGuardianConfig.GROUP.equals(event.getGroup()) || JOURNAL_KEY.equals(event.getKey()))
+		if (QUARTERMASTER_GROUP.equals(event.getGroup())
+			&& (QUARTERMASTER_KEY.equals(event.getKey()) || QUARTERMASTER_KITS_KEY.equals(event.getKey())))
+		{
+			// Quartermaster saved: the kit may have changed. Read it again on the client thread, where it is used.
+			clientThread.invokeLater(this::readKit);
+			return;
+		}
+		if (LedgerWorth.GROUP.equals(event.getGroup()) && LedgerWorth.KEY.equals(event.getKey()))
+		{
+			// Codex Ledger saved: the run's seal shows the account's worth.
+			clientThread.invokeLater(this::readWorth);
+			return;
+		}
+		if (SharedBank.GROUP.equals(event.getGroup()) && SharedBank.KEY.equals(event.getKey()))
+		{
+			// Bank Steward shared a new copy of the bank (or stopped sharing it).
+			clientThread.invokeLater(this::readSharedBank);
+			return;
+		}
+		if (!CodexGuardianConfig.GROUP.equals(event.getGroup()) || JOURNAL_KEY.equals(event.getKey())
+			|| ONE_LIFE_KEY.equals(event.getKey()) || HITS_KEY.equals(event.getKey()))
 		{
 			return;
 		}
@@ -319,6 +464,23 @@ public class CodexGuardianPlugin extends Plugin
 		if (event.getContainerId() == InventoryID.INV || event.getContainerId() == InventoryID.WORN)
 		{
 			readinessDirty = true;
+		}
+		else if (event.getContainerId() == InventoryID.BANK && event.getItemContainer() != null)
+		{
+			readBank(event.getItemContainer());
+		}
+	}
+
+	@Subscribe
+	public void onWidgetClosed(WidgetClosed event)
+	{
+		// Walking away from the bank is the last moment to fix a pack: brief the trip check there.
+		// Decided on the next tick, once the pack read includes whatever was withdrawn on the way out.
+		if (event.getGroupId() == InterfaceID.BANKMAIN && event.isUnload() && settled && config.briefings()
+			&& client.getGameState() == GameState.LOGGED_IN)
+		{
+			tripDirty = true;
+			tripBriefPending = true;
 		}
 	}
 
@@ -356,10 +518,22 @@ public class CodexGuardianPlugin extends Plugin
 		}
 		damage.hit(amount);
 		String source = sourceOf(hitsplat.getHitsplatType(), local);
+		recorder.hit(amount, source);
 		lastHitSource = source;
+		rememberHit(hitsplat.getHitsplatType(), amount, local);
 		if (journal != null)
 		{
 			journal.damage(source, amount, place(situation), System.currentTimeMillis());
+		}
+	}
+
+	@Subscribe
+	public void onMenuOptionClicked(MenuOptionClicked event)
+	{
+		// Read only: the click still goes through untouched. A self-inflicted hit must not be blamed on a monster.
+		if (HitMemory.hurtsToUse(Text.removeTags(event.getMenuTarget())))
+		{
+			selfHarmTick = client.getTickCount();
 		}
 	}
 
@@ -370,8 +544,19 @@ public class CodexGuardianPlugin extends Plugin
 		{
 			return;
 		}
-		journal.death(place(situation), lastHitSource, situation.isOneLife(), situation.risk() == Risk.SAFE,
-			System.currentTimeMillis());
+		// The killing blow is still waiting for the next tick; record it now so the replay ends at zero.
+		recorder.tick(0, situation.getMaxHitpoints(), readiness.getFoodCount(), Supplies.potionDoses(lastInventory));
+		if (situation.isOneLife() && Zones.isUnconfirmedSafe(situation.getZone()))
+		{
+			// A minigame on a Hardcore World: the advice treated it as deadly, but the record must not say the run
+			// fell when it may not have. The player can mark it as fallen from the journal.
+			journal.unconfirmedDeath(place(situation), lastHitSource, recorder.death(), System.currentTimeMillis());
+		}
+		else
+		{
+			journal.death(place(situation), lastHitSource, situation.isOneLife(), situation.risk() == Risk.SAFE,
+				recorder.death(), System.currentTimeMillis());
+		}
 		journalChanged = true;
 		closeCalls.reset();
 		damage.clear();
@@ -393,8 +578,20 @@ public class CodexGuardianPlugin extends Plugin
 		}
 		long now = System.currentTimeMillis();
 		damage.tick();
+		lag.tick(System.nanoTime() / 1_000_000L);
 
 		Situation s = read(local);
+		recorder.tick(s.getHitpoints(), s.getMaxHitpoints(), readiness.getFoodCount(), Supplies.potionDoses(lastInventory));
+		updateTrip();
+		if (tripBriefPending)
+		{
+			tripBriefPending = false;
+			// Only a pack that looks like a fight is briefed: a skiller banking logs is not told about Vorkath.
+			if (TripCheck.packedForTrip(readiness))
+			{
+				brief(Briefing.TRIP, null);
+			}
+		}
 		Peril p = assessor.assess(s);
 		situation = s;
 		peril = p;
@@ -408,6 +605,7 @@ public class CodexGuardianPlugin extends Plugin
 			watchCombatLevel(s, now);
 		}
 		watchWilderness(s);
+		watchLag(s, now);
 		alert(s, p);
 		updateOverlays(s, p);
 		publishSituation(s, p);
@@ -436,11 +634,21 @@ public class CodexGuardianPlugin extends Plugin
 			.combatLevel(local.getCombatLevel())
 			.hitpoints(client.getBoostedSkillLevel(Skill.HITPOINTS), maxHp)
 			.prayer(client.getBoostedSkillLevel(Skill.PRAYER), client.getRealSkillLevel(Skill.PRAYER));
+		int prayerPoints = client.getBoostedSkillLevel(Skill.PRAYER);
+		int prayerLevel = client.getRealSkillLevel(Skill.PRAYER);
+		prayerWatch.observe(prayerPoints, client.getTickCount());
+		b.prayerLeft(PrayerWatch.rounded(prayerWatch.secondsWithDoses(prayerPoints, prayerLevel, readiness.getPrayerDoses())));
 
 		int type = client.getVarbitValue(VarbitID.IRONMAN);
 		boolean hardcore = type == 3 || type == 5;
 		String mode = modeName(type);
-		if (!hardcore && config.oneLife())
+		boolean hardcoreWorld = OneLife.hardcoreWorld(client.getWorldType());
+		if (!hardcore && hardcoreWorld)
+		{
+			// On a Hardcore World every account has one life, whatever it was marked in the panel.
+			b.mode("Hardcore World", true);
+		}
+		else if (!hardcore && accountOneLife)
 		{
 			b.mode("One-life account", true);
 		}
@@ -456,6 +664,11 @@ public class CodexGuardianPlugin extends Plugin
 		boolean inWilderness = client.getVarbitValue(VarbitID.INSIDE_WILDERNESS) == 1;
 		int wild = inWilderness ? wildernessLevel(where) : 0;
 		Zone zone = where == null ? null : Zones.forRegion(where.getRegionID());
+		if (hardcoreWorld)
+		{
+			// Whether a minigame death is still free on Hardcore Worlds can't be checked before they open: not safe.
+			zone = Zones.onHardcoreWorld(zone);
+		}
 		if (wild > 0)
 		{
 			Zone wilderness = Zones.wilderness(wild);
@@ -470,15 +683,17 @@ public class CodexGuardianPlugin extends Plugin
 		}
 		b.zone(zone).wilderness(wild, !inWilderness && where != null && Zones.nearWilderness(where.getX(), where.getY()));
 		b.multiCombat(client.getVarbitValue(VarbitID.MULTIWAY_INDICATOR) == 1);
+		b.runEnergy(client.getEnergy() / 100);
 		b.teleblocked(client.getVarbitValue(VarbitID.TELEBLOCK_CYCLES) > TELEBLOCK_ACTIVE_ABOVE);
 
 		for (NPC npc : client.getTopLevelWorldView().npcs())
 		{
 			if (npc.getInteracting() == local && !npc.isDead() && npc.getCombatLevel() > 0)
 			{
-				b.attacker(new Threat(npc.getName(), npc.getCombatLevel(), false));
+				b.attacker(new Threat(npc.getName(), npc.getCombatLevel(), false, hits.max(npc.getName(), npc.getCombatLevel())));
 			}
 		}
+		b.lag(lag.state(), lag.describe());
 		// Outside PvP areas other players "interact" with you just by following or trading.
 		if (wild > 0 || zone != null && zone.getKind() == Zone.Kind.PVP_WORLD)
 		{
@@ -494,12 +709,22 @@ public class CodexGuardianPlugin extends Plugin
 
 		if (readinessDirty || maxHp != readinessMaxHp || inWilderness != readinessInWilderness)
 		{
-			readiness = Supplies.assess(items(InventoryID.INV), items(InventoryID.WORN), maxHp, inWilderness);
+			lastInventory = items(InventoryID.INV);
+			lastWorn = items(InventoryID.WORN);
+			readiness = Supplies.assess(lastInventory, lastWorn, maxHp, inWilderness);
 			readinessDirty = false;
+			tripDirty = true;
 			readinessMaxHp = maxHp;
 			readinessInWilderness = inWilderness;
 		}
 		b.readiness(readiness);
+		// Read after the pack, so the distance is to the reach of the teleport carried this tick.
+		if (wild > 0 && where != null)
+		{
+			int reach = readiness.getEscapeReach();
+			b.distances(reach >= 0 && wild > reach ? Zones.tilesSouthTo(where.getX(), where.getY(), reach) : -1,
+				Zones.tilesSouthTo(where.getX(), where.getY(), 0));
+		}
 		return b.build();
 	}
 
@@ -544,7 +769,7 @@ public class CodexGuardianPlugin extends Plugin
 			{
 				continue;
 			}
-			list.add(new Supplies.Item(def.getName(), item.getQuantity()));
+			list.add(new Supplies.Item(item.getId(), def.getName(), item.getQuantity()));
 		}
 		return list;
 	}
@@ -652,6 +877,86 @@ public class CodexGuardianPlugin extends Plugin
 		accountType = type;
 	}
 
+	/**
+	 * Remembers a hit when exactly one monster is attacking you and no player is: only then is there no doubt
+	 * whose hit it was. Poison, venom, burns and other damage over time belong to no single hit.
+	 */
+	private void rememberHit(int type, int amount, Player local)
+	{
+		switch (type)
+		{
+			case HitsplatID.POISON:
+			case HitsplatID.VENOM:
+			case HitsplatID.DISEASE:
+			case HitsplatID.BURN:
+			case HitsplatID.BLEED:
+				return;
+			default:
+				break;
+		}
+		// The item's damage lands on the next tick or the one after, depending on when the click was sent.
+		if (client.getTickCount() - selfHarmTick <= SELF_HARM_TICKS)
+		{
+			return;
+		}
+		NPC only = null;
+		for (NPC npc : client.getTopLevelWorldView().npcs())
+		{
+			if (npc.getInteracting() == local && !npc.isDead() && npc.getCombatLevel() > 0)
+			{
+				if (only != null)
+				{
+					return;
+				}
+				only = npc;
+			}
+		}
+		if (only == null || only.getName() == null)
+		{
+			return;
+		}
+		for (Player other : client.getTopLevelWorldView().players())
+		{
+			if (other != local && other.getInteracting() == local)
+			{
+				return;
+			}
+		}
+		if (hits.record(only.getName(), only.getCombatLevel(), amount, place(situation), System.currentTimeMillis()))
+		{
+			hitsChanged = true;
+			// The Perils page lists the hardest hitters; a new record is worth showing.
+			journalChanged = true;
+		}
+	}
+
+	/** Lag that starts while something can hurt you: a notification and a line in the journal, once a minute at most. */
+	private void watchLag(Situation s, long now)
+	{
+		if (lagCooldown > 0)
+		{
+			lagCooldown--;
+		}
+		Lag.State state = s.getLag();
+		boolean exposed = (!s.getAttackers().isEmpty() || s.getDamagePerTick() > 0 || s.risk().atLeast(Risk.HIGH)
+			|| s.getWildernessLevel() > 0) && s.risk() != Risk.SAFE;
+		if (settled && exposed && state != Lag.State.STEADY && lastLag == Lag.State.STEADY && lagCooldown == 0)
+		{
+			lagCooldown = LAG_COOLDOWN_TICKS;
+			if (journal != null)
+			{
+				journal.lag(s.getLagText(), place(s), now);
+				journalChanged = true;
+			}
+			if (config.notifyLag())
+			{
+				notifier.notify("Guardian: lag in danger (" + s.getLagText().toLowerCase() + ")"
+					+ (s.canEscape() ? ". Teleport out while it works." : ""));
+			}
+		}
+		lastLag = state;
+	}
+
 	private void watchZone(Situation s, long now)
 	{
 		Zone zone = s.getZone();
@@ -685,9 +990,13 @@ public class CodexGuardianPlugin extends Plugin
 	private void watchCloseCall(Situation s, long now)
 	{
 		CloseCallWatch.Result r = closeCalls.update(s.getHitpoints(), s.getMaxHitpoints(), config.closeCallPercent(), place(s), strongestName(s));
+		if (closeCalls.isActive())
+		{
+			recorder.mark();
+		}
 		if (r != null)
 		{
-			journal.closeCall(r.lowest, s.getMaxHitpoints(), r.place, r.source, now);
+			journal.closeCall(r.lowest, s.getMaxHitpoints(), r.place, r.source, recorder.closeCall(), now);
 			journalChanged = true;
 		}
 	}
@@ -853,6 +1162,23 @@ public class CodexGuardianPlugin extends Plugin
 		int wild = s.getWildernessLevel();
 		switch (briefingKind)
 		{
+			case TRIP:
+			{
+				TripCheck t = trip;
+				// Only a known trip is briefed; once you are somewhere dangerous, that place's own briefing takes over.
+				if (t == null || t.getDestination() == null && t.getKit() == null || s.inHarmsWay() || wild > 0)
+				{
+					return null;
+				}
+				List<WardOverlay.Check> checks = new ArrayList<>();
+				for (TripCheck.Line line : t.worst(3))
+				{
+					checks.add(new WardOverlay.Check(Mark.of(line.getTone()), line.getText()));
+				}
+				String where = t.getDestination() != null ? t.getDestination() : t.getKit();
+				return new WardOverlay.Briefing("BEFORE YOU GO", where, t.isClear() ? "READY" : "CHECK",
+					t.isClear() ? Theme.TEAL : Theme.EMBER, checks);
+			}
 			case APPROACH:
 				if (!s.isNearWilderness() && wild == 0)
 				{
@@ -868,8 +1194,8 @@ public class CodexGuardianPlugin extends Plugin
 				List<WardOverlay.Check> checks = new ArrayList<>();
 				String best = shortName(s.getReadiness().getBestEscape());
 				int reach = Math.max(0, s.getReadiness().getEscapeReach());
-				checks.add(new WardOverlay.Check(Mark.Kind.BAD, best + " stops at level " + reach));
-				checks.add(new WardOverlay.Check(Mark.Kind.WARN, "Walk south to level " + reach));
+				checks.add(new WardOverlay.Check(Mark.Kind.BAD, s.isTeleblocked() ? "Teleblocked" : best + " stops at level " + reach));
+				checks.add(new WardOverlay.Check(Mark.Kind.WARN, Advice.walkLine(s)));
 				checks.addAll(kitChecks(s).subList(0, 1));
 				return new WardOverlay.Briefing("LEVEL " + wild, "Past your teleport", "NO ESCAPE", Theme.BLOOD, checks);
 			}
@@ -887,7 +1213,17 @@ public class CodexGuardianPlugin extends Plugin
 				}
 				else
 				{
-					checks = kitChecks(s);
+					checks = new ArrayList<>(kitChecks(s));
+					if (Zones.isUnconfirmedSafe(zone))
+					{
+						checks.add(0, new WardOverlay.Check(Mark.Kind.WARN, "Safe death unconfirmed here"));
+					}
+					// A place you nearly died at gets a reminder at its door: the first thing remembered there.
+					List<String> memory = PlaceMemory.lines(journal, hits, PlaceMemory.placeOf(s));
+					if (!memory.isEmpty())
+					{
+						checks.add(new WardOverlay.Check(Mark.Kind.WARN, memory.get(0)));
+					}
 				}
 				String risk = zone.getKind() == Zone.Kind.WILDERNESS ? "LEVEL " + wild : zone.getRisk().getLabel().toUpperCase() + " RISK";
 				return new WardOverlay.Briefing("ENTERING", zone.getName(), risk, Theme.risk(zone.getRisk()), checks);
@@ -917,6 +1253,7 @@ public class CodexGuardianPlugin extends Plugin
 	/** The moments that open the plaque into a briefing. */
 	private enum Briefing
 	{
+		TRIP,
 		ZONE,
 		APPROACH,
 		LIMIT
@@ -927,11 +1264,28 @@ public class CodexGuardianPlugin extends Plugin
 		return Advice.shortName(item);
 	}
 
+	/** True when the read shown last and this one differ in nothing the panel shows but the run energy. */
+	static boolean energyOnly(Situation shown, Situation now)
+	{
+		return shown != null && shown.equals(now) && shown.getRunEnergy() != now.getRunEnergy();
+	}
+
 	/** Sends the live read to the panel, but only when something it shows has changed. */
 	private void publishSituation(Situation s, Peril p)
 	{
 		if (s.equals(shownSituation) && p.getLevel() == shownLevel && p.getScore() == shownScore)
 		{
+			// Run energy is left out of equals so the pages are not rebuilt every tick while running; the crest
+			// still shows it, so it alone is sent on when it moves.
+			if (energyOnly(shownSituation, s))
+			{
+				shownSituation = s;
+				GuardianPanel target = panel;
+				if (target != null)
+				{
+					SwingUtilities.invokeLater(() -> target.updateCrest(s));
+				}
+			}
 			return;
 		}
 		shownSituation = s;
@@ -955,7 +1309,8 @@ public class CodexGuardianPlugin extends Plugin
 			return;
 		}
 		Journal copy = journal == null ? null : gson.fromJson(gson.toJson(journal), Journal.class).repair();
-		SwingUtilities.invokeLater(() -> target.updateJournal(copy));
+		HitMemory hitCopy = journal == null ? null : gson.fromJson(gson.toJson(hits), HitMemory.class).repair();
+		SwingUtilities.invokeLater(() -> target.updateJournal(copy, hitCopy));
 	}
 
 	private void loadJournal()
@@ -965,21 +1320,25 @@ public class CodexGuardianPlugin extends Plugin
 		{
 			return;
 		}
-		Journal loaded = null;
 		String json = configManager.getConfiguration(CodexGuardianConfig.GROUP, profile, JOURNAL_KEY);
-		if (json != null && !json.isEmpty())
-		{
-			try
-			{
-				loaded = gson.fromJson(json, Journal.class);
-			}
-			catch (RuntimeException e)
-			{
-				loaded = null;
-			}
-		}
-		journal = loaded == null ? Journal.fresh(System.currentTimeMillis()) : loaded.repair();
+		SavedJson.Read<Journal> read = Journal.load(gson, json);
+		keepAside(profile, JOURNAL_KEY, json, read.isDamaged());
+		Journal loaded = read.getValue();
+		journal = loaded == null ? Journal.fresh(System.currentTimeMillis()) : loaded;
 		journalProfile = profile;
+		hits = loadHits(profile);
+		hitsChanged = false;
+		String choice = configManager.getConfiguration(CodexGuardianConfig.GROUP, profile, ONE_LIFE_KEY);
+		// A choice in a shape this version does not read is replaced below; the text is kept aside first.
+		keepAside(profile, ONE_LIFE_KEY, choice, choice != null && !choice.trim().isEmpty() && !OneLife.readable(choice));
+		OneLife.Decision oneLife = OneLife.resolve(choice, config.oneLife(), loaded != null);
+		accountOneLife = oneLife.isOneLife();
+		if (oneLife.shouldSave())
+		{
+			configManager.setConfiguration(CodexGuardianConfig.GROUP, profile, ONE_LIFE_KEY, String.valueOf(accountOneLife));
+		}
+		readKit();
+		readWorth();
 		journalChanged = true;
 		if (loaded == null)
 		{
@@ -996,6 +1355,263 @@ public class CodexGuardianPlugin extends Plugin
 			return;
 		}
 		configManager.setConfiguration(CodexGuardianConfig.GROUP, journalProfile, JOURNAL_KEY, gson.toJson(journal));
+		if (hitsChanged)
+		{
+			hitsChanged = false;
+			configManager.setConfiguration(CodexGuardianConfig.GROUP, journalProfile, HITS_KEY, gson.toJson(hits));
+		}
+	}
+
+	private HitMemory loadHits(String profile)
+	{
+		String json = configManager.getConfiguration(CodexGuardianConfig.GROUP, profile, HITS_KEY);
+		SavedJson.Read<HitMemory> read = HitMemory.load(gson, json);
+		keepAside(profile, HITS_KEY, json, read.isDamaged());
+		return read.getValue();
+	}
+
+	/**
+	 * Keeps a saved value that could not be read in full under its own key with {@link #UNREADABLE} added, before
+	 * the next save writes over it, so a damaged or newer-version journal is never lost; a later damaged read
+	 * replaces it only with different text.
+	 */
+	private void keepAside(String profile, String key, String json, boolean damaged)
+	{
+		if (!damaged || json == null)
+		{
+			return;
+		}
+		String aside = key + UNREADABLE;
+		if (!json.equals(configManager.getConfiguration(CodexGuardianConfig.GROUP, profile, aside)))
+		{
+			configManager.setConfiguration(CodexGuardianConfig.GROUP, profile, aside, json);
+		}
+	}
+
+	/** Called on the client thread when the player marks this account one-life, or not, in the panel. */
+	private void setOneLife(boolean value)
+	{
+		if (journalProfile == null)
+		{
+			return;
+		}
+		accountOneLife = value;
+		configManager.setConfiguration(CodexGuardianConfig.GROUP, journalProfile, ONE_LIFE_KEY, String.valueOf(value));
+		// The next tick's read carries the new mode to the panel and the journal summary.
+		shownSituation = null;
+		publishJournal();
+	}
+
+	/**
+	 * Reads the kit chosen in Codex Quartermaster, if it is installed and one is chosen, and resolves the
+	 * names of the single items it packs. Without Quartermaster this leaves no plan, and the trip check falls
+	 * back to Guardian's own food, teleport and last-resort checks.
+	 */
+	private void readKit()
+	{
+		String profile = configManager.getRSProfileKey();
+		KitPlan plan = null;
+		if (profile != null)
+		{
+			JsonObject kits = readJson(configManager.getConfiguration(QUARTERMASTER_GROUP, profile, QUARTERMASTER_KITS_KEY));
+			JsonObject quarters = readJson(configManager.getConfiguration(QUARTERMASTER_GROUP, profile, QUARTERMASTER_KEY));
+			try
+			{
+				plan = KitPlan.from(kits, quarters);
+			}
+			catch (RuntimeException e)
+			{
+				plan = null;
+			}
+		}
+		kitPlan = plan;
+		kitItemNames.clear();
+		if (plan != null && client.getGameState() == GameState.LOGGED_IN)
+		{
+			for (KitPlan.Need need : plan.getNeeds())
+			{
+				if (need.getItemId() >= 0)
+				{
+					String name = itemName(need.getItemId());
+					if (name != null)
+					{
+						kitItemNames.put(need.getItemId(), name);
+					}
+				}
+			}
+		}
+		readSharedBank();
+		if (!bankSeenThisSession && bankItems == null)
+		{
+			bankGraces.clear();
+			if (plan != null)
+			{
+				for (int i = 0; i < BANKED_GRACES.length; i++)
+				{
+					long count = 0;
+					for (int id : BANKED_GRACES[i])
+					{
+						count += plan.inBank(id);
+					}
+					if (count > 0)
+					{
+						bankGraces.put(BANKED_GRACE_NAMES[i], (int) Math.min(Integer.MAX_VALUE, count));
+					}
+				}
+			}
+		}
+		tripDirty = true;
+	}
+
+	/**
+	 * Reads the account's worth from Codex Ledger for the run's seal. Only when Ledger saves or the profile changes,
+	 * never per tick; without Ledger it stays unknown and the seal shows the biggest hit instead. Ledger's save runs
+	 * to 200 KB, so only the lookup happens here: the text is read on the Swing thread, never the game's.
+	 */
+	private void readWorth()
+	{
+		String profile = configManager.getRSProfileKey();
+		String saved = profile == null ? null : configManager.getConfiguration(LedgerWorth.GROUP, profile, LedgerWorth.KEY);
+		GuardianPanel target = panel;
+		if (target != null)
+		{
+			// Queued in order behind any earlier read or forget, so the newest always lands last.
+			SwingUtilities.invokeLater(() -> target.updateWorth(LedgerWorth.read(gson, saved)));
+		}
+	}
+
+	private void publishWorth(long worth)
+	{
+		GuardianPanel target = panel;
+		if (target != null)
+		{
+			SwingUtilities.invokeLater(() -> target.updateWorth(worth));
+		}
+	}
+
+	/**
+	 * Reads the whole bank Codex Bank Steward shares, unless the bank itself was seen this session, which is newer.
+	 * Without Bank Steward (or with its sharing off) the bank stays unknown and the last resorts fall back to
+	 * Quartermaster's record, which {@link #readKit} reads.
+	 */
+	private void readSharedBank()
+	{
+		if (bankSeenThisSession)
+		{
+			return;
+		}
+		String profile = configManager.getRSProfileKey();
+		Map<Integer, Long> shared = profile == null ? null
+			: SharedBank.read(gson, configManager.getConfiguration(SharedBank.GROUP, profile, SharedBank.KEY));
+		boolean had = bankItems != null;
+		bankItems = shared;
+		if (shared != null)
+		{
+			bankGraces.clear();
+			bankGraces.putAll(SharedBank.graces(shared, BANKED_GRACES, BANKED_GRACE_NAMES));
+		}
+		else if (had)
+		{
+			// Sharing stopped: go back to what Quartermaster recorded, if anything.
+			readKit();
+			return;
+		}
+		tripDirty = true;
+	}
+
+	/**
+	 * The client's name for an item id that came from another plugin's save, or null for an id the game does not
+	 * have: a damaged save must not reach past the item table on the client thread.
+	 */
+	private String itemName(int id)
+	{
+		if (id < 0 || id >= client.getItemCount())
+		{
+			return null;
+		}
+		ItemComposition def = client.getItemDefinition(id);
+		return def == null ? null : def.getName();
+	}
+
+	/** Another plugin's saved JSON object, or null when it is missing or not an object. */
+	private JsonObject readJson(String json)
+	{
+		if (json == null || json.isEmpty())
+		{
+			return null;
+		}
+		try
+		{
+			JsonElement tree = SavedJson.tree(gson, json);
+			return tree != null && tree.isJsonObject() ? tree.getAsJsonObject() : null;
+		}
+		catch (RuntimeException e)
+		{
+			return null;
+		}
+	}
+
+	/** Reads the bank while it is open: everything in it, and its last resorts. This beats any shared or older record. */
+	private void readBank(ItemContainer bank)
+	{
+		Map<String, Integer> found = new LinkedHashMap<>();
+		Map<Integer, Long> all = new HashMap<>();
+		for (Item item : bank.getItems())
+		{
+			if (item == null || item.getId() < 0 || item.getQuantity() <= 0)
+			{
+				continue;
+			}
+			all.merge(item.getId(), (long) item.getQuantity(), Long::sum);
+			for (int i = 0; i < BANKED_GRACES.length; i++)
+			{
+				for (int id : BANKED_GRACES[i])
+				{
+					if (item.getId() == id)
+					{
+						found.merge(BANKED_GRACE_NAMES[i], item.getQuantity(), Integer::sum);
+					}
+				}
+			}
+		}
+		bankGraces.clear();
+		bankGraces.putAll(found);
+		bankItems = all;
+		bankSeenThisSession = true;
+		tripDirty = true;
+	}
+
+	/** Works the trip check out again when the pack, the kit or the bank changed, and hands it to the panel. */
+	private void updateTrip()
+	{
+		if (!tripDirty)
+		{
+			return;
+		}
+		tripDirty = false;
+		KitPlan plan = kitPlan;
+		Zone destination = TripCheck.destinationFor(plan == null ? null : plan.getName());
+		List<Supplies.Item> bank = SharedBank.byName(bankItems, id -> bankNames.computeIfAbsent(id,
+			this::itemName));
+		TripCheck next = TripCheck.build(destination, plan, kitItemNames, lastInventory, lastWorn, readiness, bankGraces, bank,
+			config.foodReserve()).withMemory(destination == null ? null
+				: PlaceMemory.lines(journal, hits, destination.getName()));
+		trip = next;
+		GuardianPanel target = panel;
+		if (target != null)
+		{
+			SwingUtilities.invokeLater(() -> target.updateTrip(next));
+		}
+	}
+
+	/** The player says a minigame death on a Hardcore World ended the run. */
+	private void markFallen(long at)
+	{
+		if (journal != null && journal.markFallen(at))
+		{
+			saveJournal();
+			publishJournal();
+		}
 	}
 
 	private void newRun()
@@ -1006,7 +1622,73 @@ public class CodexGuardianPlugin extends Plugin
 		}
 		journal = Journal.fresh(System.currentTimeMillis());
 		closeCalls.reset();
+		recorder.unmark();
 		saveJournal();
 		publishJournal();
+	}
+
+	/** Asks where to save the seal card (on the Swing thread, where the buttons run), then writes it off that thread. */
+	private void saveCard(BufferedImage card, String fileName)
+	{
+		GuardianPanel view = panel;
+		if (view == null)
+		{
+			return;
+		}
+		List<Filepath> chosen = new Filepath.Chooser()
+			.setIsSave()
+			.setAcceptsFiles()
+			.setDialogTitle("Save seal card")
+			.addExtensionFilter("PNG image", "png")
+			.setDefaultExtension("png")
+			.setFileName(fileName)
+			.showDialog(view);
+		if (chosen == null || chosen.isEmpty())
+		{
+			return;
+		}
+		Filepath target = chosen.get(0);
+		executor.execute(() ->
+		{
+			String note;
+			try (OutputStream out = target.openOutputStream())
+			{
+				ImageIO.write(card, "png", out);
+				note = "Saved as " + target.getFileName() + ".";
+			}
+			catch (IOException e)
+			{
+				note = "The card could not be saved: " + e.getMessage();
+			}
+			String shown = note;
+			SwingUtilities.invokeLater(() ->
+			{
+				GuardianPanel p = panel;
+				if (p != null)
+				{
+					p.shareNote(shown);
+				}
+			});
+		});
+	}
+
+	/** Puts the seal card on the clipboard; the buttons call this on the Swing thread. */
+	private void copyCard(BufferedImage card)
+	{
+		String note;
+		try
+		{
+			Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new ImageTransfer(ImageTransfer.opaque(card)), null);
+			note = "Copied. Paste it anywhere you share pictures.";
+		}
+		catch (IllegalStateException e)
+		{
+			note = "The clipboard is busy, try again in a moment.";
+		}
+		GuardianPanel p = panel;
+		if (p != null)
+		{
+			p.shareNote(note);
+		}
 	}
 }

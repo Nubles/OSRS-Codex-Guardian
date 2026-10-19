@@ -51,7 +51,9 @@ public final class Peril
 		/** Who is attacking you. */
 		THREAT,
 		/** What you carry: food, teleports, prayer, cures and saving graces. */
-		KIT
+		KIT,
+		/** How steadily the game is reaching you: lag and freezes. */
+		LINK
 	}
 
 	public static final class Reason

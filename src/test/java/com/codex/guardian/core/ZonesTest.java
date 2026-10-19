@@ -52,4 +52,34 @@ public class ZonesTest
 		// The north end of the Wilderness Slayer Cave lies east of the surface Wilderness and above level 30.
 		assertTrue(Zones.wildernessLevel(3420, 10165) > 30);
 	}
+
+	@Test
+	public void hardcoreWorldsDoNotTrustTheSafeRule()
+	{
+		Zone caves = Zones.onHardcoreWorld(Zones.forRegion(9551));
+		assertEquals("Fight Caves", caves.getName());
+		assertEquals(Risk.HIGH, caves.getRisk());
+		assertEquals("Minigame", caves.kindLabel());
+		assertTrue(Zones.isUnconfirmedSafe(caves));
+		assertTrue(caves.getAdvice().contains("Hardcore Worlds") && caves.getAdvice().contains("yet") && !caves.getAdvice().matches(".*\\d.*"));
+		assertEquals(Risk.EXTREME, Zones.onHardcoreWorld(Zones.forRegion(9043)).getRisk());
+		assertEquals(Risk.MEDIUM, Zones.onHardcoreWorld(Zones.forRegion(9033)).getRisk());
+		// Every safe minigame has a Hardcore World read, and nothing else changes.
+		for (int region = 0; region < 32768; region++)
+		{
+			Zone zone = Zones.forRegion(region);
+			Zone hcw = Zones.onHardcoreWorld(zone);
+			if (zone != null && zone.getRisk() == Risk.SAFE)
+			{
+				assertTrue(zone.getName(), hcw.getRisk() != Risk.SAFE && hcw.getName().equals(zone.getName()));
+			}
+			else
+			{
+				assertTrue(hcw == zone);
+			}
+		}
+		assertNull(Zones.onHardcoreWorld(null));
+		assertFalse(Zones.isUnconfirmedSafe(Zones.forRegion(9551)));
+		assertEquals("Safe minigame", Zones.forRegion(9551).kindLabel());
+	}
 }

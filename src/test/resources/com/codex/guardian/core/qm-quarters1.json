@@ -1,0 +1,1 @@
+{"bank":{"385":90,"2570":2},"bankSeen":1,"kits":[{"id":"kit:1","name":"Zulrah trip","needs":[{"supply":"FOOD","perTrip":240},{"supply":"PRAYER","perTrip":16},{"supply":"item:2550","perTrip":0},{"supply":"ANTIVENOM","perTrip":4}]}],"active":"kit:1","target":10,"usage":{},"saved":1,"stored":{},"iron":false}

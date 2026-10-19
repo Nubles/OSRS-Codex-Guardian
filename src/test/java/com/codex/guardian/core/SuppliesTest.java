@@ -122,4 +122,28 @@ public class SuppliesTest
 		assertEquals(-1, pack(item("Shark", 1)).getEscapeReach());
 		assertFalse(pack(item("Chronicle", 1)).hasEscape());
 	}
+
+	@Test
+	public void onlyAChargedSceptreIdCountsAsAWayOut()
+	{
+		// The empty older sceptre is named exactly like a charged one; the uncharged new one says so in its name.
+		assertFalse(pack(new Supplies.Item(9050, "Pharaoh's sceptre", 1)).hasEscape());
+		assertFalse(pack(new Supplies.Item(26945, "Pharaoh's sceptre (uncharged)", 1)).hasEscape());
+		// By name alone (no id) there is no telling, so it is not offered.
+		assertFalse(pack(item("Pharaoh's sceptre", 1)).hasEscape());
+		assertTrue(pack(new Supplies.Item(26948, "Pharaoh's sceptre", 1)).hasEscape());
+		assertTrue(pack(new Supplies.Item(13077, "Pharaoh's sceptre", 1)).hasEscape());
+	}
+
+	@Test
+	public void anEmptyBankedSceptreIsNotOfferedAsTheBankedWayOut()
+	{
+		java.util.Map<Integer, Long> bank = new java.util.TreeMap<>();
+		bank.put(26945, 1L);
+		List<Supplies.Item> byName = SharedBank.byName(bank, id -> id == 26945 ? "Pharaoh's sceptre (uncharged)" : null);
+		assertNull(Supplies.assess(byName, Collections.emptyList(), 99).getBestEscape());
+		bank.put(26948, 1L);
+		byName = SharedBank.byName(bank, id -> "Pharaoh's sceptre");
+		assertEquals("Pharaoh's sceptre", Supplies.assess(byName, Collections.emptyList(), 99).getBestEscape());
+	}
 }

@@ -2,10 +2,12 @@ package com.codex.guardian.ui;
 
 import com.codex.guardian.core.Advice;
 import com.codex.guardian.core.Peril;
+import com.codex.guardian.core.PrayerWatch;
 import com.codex.guardian.core.Readiness;
 import com.codex.guardian.core.Risk;
 import com.codex.guardian.core.Situation;
 import com.codex.guardian.core.Threat;
+import com.codex.guardian.core.TripCheck;
 import com.codex.guardian.core.Zone;
 import java.awt.BorderLayout;
 import java.awt.Color;
@@ -33,7 +35,16 @@ final class WardView
 	{
 	}
 
-	static StackPanel build(Situation s, Peril peril, PerilGauge gauge, int foodReserve)
+	static StackPanel build(Situation s, Peril peril, PerilGauge gauge, int foodReserve, TripCheck trip)
+	{
+		return build(s, peril, gauge, foodReserve, trip, java.util.Collections.emptyList());
+	}
+
+	/**
+	 * @param memory what the account has lived through where it stands (see {@code PlaceMemory}), shown on the
+	 *               place card; may be empty
+	 */
+	static StackPanel build(Situation s, Peril peril, PerilGauge gauge, int foodReserve, TripCheck trip, List<String> memory)
 	{
 		StackPanel stack = new StackPanel(6, 8);
 		if (!s.isLoggedIn())
@@ -52,8 +63,17 @@ final class WardView
 			stack.add(attackers(s));
 		}
 
+		// Somewhere quiet, the trip ahead matters more than the ground you stand on.
+		if (showTrip(s, trip))
+		{
+			String where = trip.getDestination() != null ? trip.getDestination() : trip.getKit();
+			// A kit can carry any name the player typed; keep it from running into the heading.
+			stack.add(new SectionHeader("Before you go", where.length() > 16 ? where.substring(0, 15).trim() + "…" : where));
+			stack.add(trip(trip));
+		}
+
 		stack.add(new SectionHeader("Where you are"));
-		stack.add(place(s));
+		stack.add(place(s, memory));
 
 		stack.add(new SectionHeader("Readiness"));
 		stack.add(readiness(s, foodReserve));
@@ -80,10 +100,49 @@ final class WardView
 		return stack;
 	}
 
+	/**
+	 * The trip check shows while nothing is happening: no attackers, nowhere dangerous, not in the Wilderness,
+	 * and only when there is a trip to check (a Quartermaster kit), or something missing sitting in the bank while
+	 * the pack looks like a fight. A skiller with a ring of life banked is not told daily that they have no food.
+	 */
+	static boolean showTrip(Situation s, TripCheck trip)
+	{
+		if (trip == null || s.inHarmsWay() || s.getWildernessLevel() > 0 || s.risk() == Risk.SAFE)
+		{
+			return false;
+		}
+		if (trip.getDestination() != null || trip.getKit() != null)
+		{
+			return true;
+		}
+		if (s.getReadiness() == null || !TripCheck.packedForTrip(s.getReadiness()))
+		{
+			return false;
+		}
+		return trip.pointsAtBank();
+	}
+
+	private static Card trip(TripCheck trip)
+	{
+		List<JComponent> rows = new ArrayList<>();
+		for (TripCheck.Line line : trip.getLines())
+		{
+			rows.add(Rows.sentence(Mark.of(line.getTone()), line.getText(), TEXT - 30));
+		}
+		if (trip.getKit() != null)
+		{
+			rows.add(Rows.sentence(Mark.Kind.NONE, "Checked against your Quartermaster kit, " + trip.getKit(), TEXT - 30));
+		}
+		Card card = Rows.ledger(rows);
+		card.accent(trip.isClear() ? Theme.TEAL : Theme.EMBER);
+		return card;
+	}
+
 	/** The place card and the readiness ledger already carry these, each with its own verdict mark. */
 	private static boolean saidElsewhere(Peril.Reason r)
 	{
-		return r.getTopic() == Peril.Topic.PLACE || r.getTopic() == Peril.Topic.KIT || r.getTone() == Peril.Tone.GOOD;
+		return r.getTopic() == Peril.Topic.PLACE || r.getTopic() == Peril.Topic.KIT || r.getTopic() == Peril.Topic.LINK
+			|| r.getTone() == Peril.Tone.GOOD;
 	}
 
 	private static boolean paceShown(Peril peril)
@@ -105,7 +164,8 @@ final class WardView
 		text.setOpaque(false);
 		text.setLayout(new BoxLayout(text, BoxLayout.Y_AXIS));
 		text.add(centred(Ui.wrapped(peril.headline(), Theme.body(), Theme.TEXT, TEXT - 16)));
-		if (paceShown(peril))
+		// The pace line is for when the headline says something else; never say the same seconds twice.
+		if (paceShown(peril) && !peril.headline().startsWith("At this pace"))
 		{
 			text.add(centred(Ui.label("About " + peril.getSecondsLeft() + "s of hitpoints at this pace", Theme.small(), Theme.BLOOD)));
 		}
@@ -152,13 +212,17 @@ final class WardView
 			int n = counts.get(e.getKey());
 			boolean outclassed = t.isPlayer() || t.getCombatLevel() >= s.getCombatLevel() + 20;
 			String name = (t.getName() == null ? "Unknown" : t.getName()) + (n > 1 ? "  x" + n : "");
-			String value = t.isPlayer() ? "Player, lvl " + t.getCombatLevel() : "Level " + t.getCombatLevel();
-			rows.add(Rows.fact(outclassed ? Mark.Kind.BAD : Mark.Kind.WARN, name, value, outclassed ? Theme.BLOOD : null));
+			// What it has hit you for before is the figure to eat against; it replaces the level when known.
+			boolean deadly = t.getKnownMax() > 0 && t.getKnownMax() >= s.getHitpoints();
+			String value = t.isPlayer() ? "Player, lvl " + t.getCombatLevel()
+				: t.getKnownMax() > 0 ? "Hits " + t.getKnownMax() : "Level " + t.getCombatLevel();
+			rows.add(Rows.fact(outclassed || deadly ? Mark.Kind.BAD : Mark.Kind.WARN, name, value,
+				outclassed || deadly ? Theme.BLOOD : null));
 		}
 		return Rows.ledger(rows);
 	}
 
-	private static Card place(Situation s)
+	private static Card place(Situation s, List<String> memory)
 	{
 		Zone zone = s.getZone();
 		Card card = new Card(new BorderLayout(0, 4));
@@ -198,6 +262,25 @@ final class WardView
 		body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
 		pills.setAlignmentX(0f);
 		body.add(pills);
+		int toReach = s.getTilesToReach();
+		int toDitch = s.getTilesToDitch();
+		boolean reachHelps = toReach > 0 && !s.isTeleblocked();
+		if (reachHelps || toDitch > 0 && !s.canEscape())
+		{
+			// A teleblock stops every teleport, so the only distance that matters then is to the ditch.
+			String reachLine = reachHelps ? "Teleport works " + toReach + " tiles south" : null;
+			String ditchLine = toDitch > 0 && !s.canEscape() ? "Ditch " + toDitch + " tiles south" : null;
+			for (String line : new String[]{reachLine, ditchLine})
+			{
+				if (line != null)
+				{
+					JLabel l = Ui.label(line, Theme.small(), Theme.GOLD);
+					l.setBorder(new EmptyBorder(4, 0, 0, 0));
+					l.setAlignmentX(0f);
+					body.add(l);
+				}
+			}
+		}
 		String advice = zone != null ? zone.getAdvice()
 			: s.isNearWilderness() ? "The Wilderness starts a few steps north. Other players can attack you past the ditch."
 			: "Nothing here Guardian knows to be dangerous. Stay sharp all the same.";
@@ -205,6 +288,13 @@ final class WardView
 		adviceLabel.setBorder(new EmptyBorder(4, 0, 0, 0));
 		adviceLabel.setAlignmentX(0f);
 		body.add(adviceLabel);
+		for (String line : memory)
+		{
+			JLabel l = Ui.wrapped(line, Theme.small(), Theme.EMBER, TEXT);
+			l.setBorder(new EmptyBorder(4, 0, 0, 0));
+			l.setAlignmentX(0f);
+			body.add(l);
+		}
 		card.add(body, BorderLayout.CENTER);
 		return card;
 	}
@@ -244,9 +334,30 @@ final class WardView
 		rows.add(Rows.fact(graces.isEmpty() ? Mark.Kind.NONE : wild > 30 ? Mark.Kind.WARN : Mark.Kind.GOOD, "Last resort",
 			graces.isEmpty() ? "None worn" : wild > 30 ? "Fails above 30" : String.join(", ", graces), null));
 
+		// The crest above shows the prayer points, so this row says what keeps them up: the time left while
+		// praying, else the restores carried.
 		boolean prayerLow = s.getMaxPrayer() > 1 && s.getPrayer() * 4 < s.getMaxPrayer();
-		rows.add(Rows.fact(r.getPrayerDoses() > 0 ? Mark.Kind.GOOD : prayerLow && exposed ? Mark.Kind.WARN : Mark.Kind.NONE, "Prayer",
-			s.getPrayer() + "/" + s.getMaxPrayer() + (r.getPrayerDoses() > 0 ? "  ·  " + r.getPrayerDoses() + " doses" : ""), null));
+		int prayerLeft = s.getPrayerLeft();
+		if (prayerLeft >= 0 && s.getPrayer() > 0)
+		{
+			// Draining: how long it lasts, restore doses included, says more than the dose count.
+			boolean runningLow = prayerLeft < 60 && exposed;
+			rows.add(Rows.fact(runningLow ? (prayerLeft < 20 ? Mark.Kind.BAD : Mark.Kind.WARN) : Mark.Kind.GOOD, "Prayer",
+				PrayerWatch.describe(prayerLeft) + " left",
+				runningLow ? (prayerLeft < 20 ? Theme.BLOOD : Theme.EMBER) : null));
+		}
+		else
+		{
+			rows.add(Rows.fact(r.getPrayerDoses() > 0 ? Mark.Kind.GOOD : prayerLow && exposed ? Mark.Kind.WARN : Mark.Kind.NONE, "Prayer",
+				r.getPrayerDoses() > 0 ? r.getPrayerDoses() + " doses" : "No restores", null));
+		}
+
+		if (s.getLag() != com.codex.guardian.core.Lag.State.STEADY)
+		{
+			boolean frozen = s.getLag() == com.codex.guardian.core.Lag.State.FROZEN;
+			rows.add(Rows.fact(frozen ? Mark.Kind.BAD : Mark.Kind.WARN, "Connection", s.getLagText(),
+				frozen ? Theme.BLOOD : Theme.EMBER));
+		}
 
 		Situation.Toxin toxin = s.getToxin();
 		int cures = r.getAntipoisonDoses() + r.getAntivenomDoses();

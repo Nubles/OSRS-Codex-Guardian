@@ -28,6 +28,8 @@ public final class Situation
 	private final int maxHitpoints;
 	private final int prayer;
 	private final int maxPrayer;
+	/** Seconds of prayer left at the measured drain, counting restore doses carried, or -1 when it is not draining. */
+	private final int prayerLeft;
 	private final Toxin toxin;
 	private final Zone zone;
 	private final int wildernessLevel;
@@ -38,6 +40,12 @@ public final class Situation
 	private final double damagePerTick;
 	private final int recentMaxHit;
 	private final Readiness readiness;
+	private final int tilesToReach;
+	private final int tilesToDitch;
+	private final Lag.State lag;
+	private final String lagText;
+	/** Run energy in whole percent, or -1 when unknown. */
+	private final int runEnergy;
 
 	private Situation(Builder b)
 	{
@@ -51,6 +59,7 @@ public final class Situation
 		maxHitpoints = b.maxHitpoints;
 		prayer = b.prayer;
 		maxPrayer = b.maxPrayer;
+		prayerLeft = b.prayerLeft;
 		toxin = b.toxin;
 		zone = b.zone;
 		wildernessLevel = b.wildernessLevel;
@@ -61,6 +70,11 @@ public final class Situation
 		damagePerTick = b.damagePerTick;
 		recentMaxHit = b.recentMaxHit;
 		readiness = b.readiness;
+		tilesToReach = b.tilesToReach;
+		tilesToDitch = b.tilesToDitch;
+		lag = b.lag;
+		lagText = b.lagText;
+		runEnergy = b.runEnergy;
 	}
 
 	public static Situation loggedOut()
@@ -124,6 +138,12 @@ public final class Situation
 		return maxPrayer;
 	}
 
+	/** Seconds of prayer left at the drain Guardian measured, restore doses included, or -1 when it is not draining. */
+	public int getPrayerLeft()
+	{
+		return prayerLeft;
+	}
+
 	public Toxin getToxin()
 	{
 		return toxin;
@@ -156,6 +176,22 @@ public final class Situation
 		return teleblocked;
 	}
 
+	/** Run energy in whole percent, or -1 when it was not read. */
+	public int getRunEnergy()
+	{
+		return runEnergy;
+	}
+
+	/**
+	 * True when running away is the plan but there is next to no energy to run with: in the Wilderness, under fire,
+	 * with no teleport that works here. A player who cannot run is caught by anyone who can.
+	 */
+	public boolean cannotRun()
+	{
+		return runEnergy >= 0 && runEnergy < Advice.LOW_RUN_ENERGY && wildernessLevel > 0 && !canEscape()
+			&& (!attackers.isEmpty() || damagePerTick > 0);
+	}
+
 	/** Whether a teleport you carry would get you out from here, right now. */
 	public boolean canEscape()
 	{
@@ -184,6 +220,58 @@ public final class Situation
 		return readiness;
 	}
 
+	/**
+	 * Tiles to walk due south until your best teleport works again, or -1 when that is unknown or does not
+	 * apply (no teleport, already within its reach, or a place off Guardian's Wilderness map).
+	 */
+	public int getTilesToReach()
+	{
+		return tilesToReach;
+	}
+
+	/** Tiles to walk due south to leave the Wilderness, or -1 outside it or off its map. */
+	public int getTilesToDitch()
+	{
+		return tilesToDitch;
+	}
+
+	/** How steadily game ticks are arriving; see {@link Lag}. */
+	public Lag.State getLag()
+	{
+		return lag;
+	}
+
+	/** The lag in a few words, such as "3 late ticks"; "Steady" when there is none. */
+	public String getLagText()
+	{
+		return lagText;
+	}
+
+	/**
+	 * What the attackers on you have hit you for before, as one figure: the hardest hitter's best, plus the next
+	 * hardest's when two are on you in multi-combat, since two hits can land on one tick there. In single-way combat
+	 * only one can be attacking you at a time. 0 when none of them has hit you before.
+	 */
+	public int rememberedWorst()
+	{
+		int first = 0;
+		int second = 0;
+		for (Threat t : attackers)
+		{
+			int max = t.getKnownMax();
+			if (max > first)
+			{
+				second = first;
+				first = max;
+			}
+			else if (max > second)
+			{
+				second = max;
+			}
+		}
+		return multiCombat ? first + second : first;
+	}
+
 	public Risk risk()
 	{
 		return zone == null ? Risk.LOW : zone.getRisk();
@@ -205,19 +293,23 @@ public final class Situation
 		Situation s = (Situation) o;
 		return loggedIn == s.loggedIn && oneLife == s.oneLife && world == s.world && combatLevel == s.combatLevel
 			&& hitpoints == s.hitpoints && maxHitpoints == s.maxHitpoints && prayer == s.prayer && maxPrayer == s.maxPrayer
+			&& prayerLeft == s.prayerLeft
 			&& wildernessLevel == s.wildernessLevel && nearWilderness == s.nearWilderness && multiCombat == s.multiCombat
-			&& teleblocked == s.teleblocked
+			&& teleblocked == s.teleblocked && tilesToReach == s.tilesToReach && tilesToDitch == s.tilesToDitch
 			&& Double.compare(damagePerTick, s.damagePerTick) == 0 && recentMaxHit == s.recentMaxHit
 			&& Objects.equals(playerName, s.playerName) && Objects.equals(mode, s.mode) && toxin == s.toxin
-			&& Objects.equals(zone, s.zone) && attackers.equals(s.attackers) && Objects.equals(readiness, s.readiness);
+			&& Objects.equals(zone, s.zone) && attackers.equals(s.attackers) && Objects.equals(readiness, s.readiness)
+			&& lag == s.lag && Objects.equals(lagText, s.lagText)
+			// Energy moves every tick while running; only whether it has run out changes what is shown.
+			&& cannotRun() == s.cannotRun();
 	}
 
 	@Override
 	public int hashCode()
 	{
 		return Objects.hash(loggedIn, playerName, mode, oneLife, world, combatLevel, hitpoints, maxHitpoints, prayer,
-			maxPrayer, toxin, zone, wildernessLevel, nearWilderness, multiCombat, teleblocked, attackers, damagePerTick, recentMaxHit,
-			readiness);
+			maxPrayer, prayerLeft, toxin, zone, wildernessLevel, nearWilderness, multiCombat, teleblocked, attackers, damagePerTick, recentMaxHit,
+			readiness, tilesToReach, tilesToDitch, lag, lagText, cannotRun());
 	}
 
 	public static final class Builder
@@ -232,16 +324,28 @@ public final class Situation
 		private int maxHitpoints = 10;
 		private int prayer = 1;
 		private int maxPrayer = 1;
+		private int prayerLeft = -1;
 		private Toxin toxin = Toxin.NONE;
 		private Zone zone;
 		private int wildernessLevel;
 		private boolean nearWilderness;
 		private boolean multiCombat;
 		private boolean teleblocked;
+		private int tilesToReach = -1;
+		private int tilesToDitch = -1;
 		private final List<Threat> attackers = new ArrayList<>();
 		private double damagePerTick;
 		private int recentMaxHit;
 		private Readiness readiness = Readiness.empty();
+		private Lag.State lag = Lag.State.STEADY;
+		private String lagText = "Steady";
+		private int runEnergy = -1;
+
+		public Builder runEnergy(int percent)
+		{
+			runEnergy = percent;
+			return this;
+		}
 
 		public Builder loggedIn(boolean value)
 		{
@@ -285,6 +389,13 @@ public final class Situation
 		{
 			prayer = current;
 			maxPrayer = max;
+			return this;
+		}
+
+		/** Seconds of prayer left with restores, or -1 when prayer is not draining. */
+		public Builder prayerLeft(int seconds)
+		{
+			prayerLeft = seconds;
 			return this;
 		}
 
@@ -332,9 +443,24 @@ public final class Situation
 			return this;
 		}
 
+		/** Walking distances south: to your best teleport's reach and out of the Wilderness, -1 when unknown. */
+		public Builder distances(int toReach, int toDitch)
+		{
+			tilesToReach = toReach;
+			tilesToDitch = toDitch;
+			return this;
+		}
+
 		public Builder readiness(Readiness value)
 		{
 			readiness = value;
+			return this;
+		}
+
+		public Builder lag(Lag.State state, String text)
+		{
+			lag = state == null ? Lag.State.STEADY : state;
+			lagText = text == null ? "Steady" : text;
 			return this;
 		}
 

@@ -153,4 +153,38 @@ public class JournalTest
 		assertEquals(20, log.recentMaxHit());
 		assertEquals(29, log.recentWorstTick());
 	}
+
+	@Test
+	public void aMinigameDeathOnAHardcoreWorldWaitsForThePlayersWord()
+	{
+		Journal j = Journal.fresh(0);
+		j.unconfirmedDeath("Pest Control", "a brawler", null, 1_000);
+		// Neither a death that ends the run nor a safe one.
+		assertEquals(0, j.getDeaths());
+		assertEquals(0, j.getSafeDeaths());
+		assertEquals(1, j.getUnconfirmedDeaths());
+		Journal.Entry e = j.getEntries().get(j.getEntries().size() - 1);
+		assertEquals(Journal.Type.UNCONFIRMED_DEATH, e.getType());
+		assertEquals(Journal.UNCONFIRMED_TITLE, e.getTitle());
+
+		assertFalse("only the entry at that moment", j.markFallen(999));
+		assertTrue(j.markFallen(1_000));
+		assertEquals(1, j.getDeaths());
+		assertEquals(0, j.getUnconfirmedDeaths());
+		assertEquals(Journal.Type.DEATH, e.getType());
+		assertEquals("The run has fallen", e.getTitle());
+		assertFalse("marked once", j.markFallen(1_000));
+
+		// The pending entry survives a save and is never pruned like an ordinary line.
+		com.google.gson.Gson gson = new com.google.gson.Gson();
+		Journal k = Journal.fresh(0);
+		k.unconfirmedDeath("The Inferno", null, null, 5);
+		for (int i = 0; i < Journal.MAX_ENTRIES + 20; i++)
+		{
+			k.closeCall(10, 99, "Somewhere", "a goblin", 10 + i);
+		}
+		Journal back = gson.fromJson(gson.toJson(k), Journal.class).repair();
+		assertEquals(1, back.getUnconfirmedDeaths());
+		assertTrue(back.markFallen(5));
+	}
 }

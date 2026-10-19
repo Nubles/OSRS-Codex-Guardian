@@ -1,8 +1,12 @@
 package com.codex.guardian.ui;
 
+import com.codex.guardian.core.HitMemory;
 import com.codex.guardian.core.Journal;
 import com.codex.guardian.core.Peril;
+import com.codex.guardian.core.PlaceMemory;
 import com.codex.guardian.core.Situation;
+import com.codex.guardian.core.TripCheck;
+import java.util.function.Consumer;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
 import java.awt.Dimension;
@@ -34,22 +38,39 @@ public class GuardianPanel extends PluginPanel
 	private final JScrollPane perils = scroller();
 	private final PerilGauge gauge = new PerilGauge();
 	private final Runnable onNewRun;
+	private final Consumer<Boolean> onOneLife;
 	private final Timer confirmTimeout;
 
 	private Situation situation = Situation.loggedOut();
 	private Peril peril = Peril.calm();
 	private Journal journal;
+	private HitMemory hits;
+	private TripCheck trip;
 	private int foodReserve;
 	private boolean confirming;
 	private boolean active;
 	private boolean wardStale;
+	private boolean journalStale;
+	/** Called on the Swing thread with the time of the unconfirmed death the player marked as fallen. */
+	private java.util.function.LongConsumer onMarkFallen = at -> {};
+	/** The unconfirmed death waiting for a second click to be marked as fallen, or -1. */
+	private long markingAt = -1;
+	private long worth = -1;
+	private ShareActions share;
+	private java.util.function.BooleanSupplier nameOnCards = () -> true;
+	private java.util.function.BooleanSupplier worthOnCards = () -> false;
+	private String shareNote;
 
-	/** @param onNewRun called on the Swing thread once the player confirms a fresh run */
-	public GuardianPanel(int foodReserve, Runnable onNewRun)
+	/**
+	 * @param onNewRun  called on the Swing thread once the player confirms a fresh run
+	 * @param onOneLife called on the Swing thread when the player marks this account one-life (true) or not
+	 */
+	public GuardianPanel(int foodReserve, Runnable onNewRun, Consumer<Boolean> onOneLife)
 	{
 		super(false);
 		this.foodReserve = foodReserve;
 		this.onNewRun = onNewRun;
+		this.onOneLife = onOneLife;
 		this.confirmTimeout = new Timer(4000, e -> setConfirming(false));
 		confirmTimeout.setRepeats(false);
 
@@ -72,7 +93,13 @@ public class GuardianPanel extends PluginPanel
 		content.add(perils, TABS[2]);
 		add(content, BorderLayout.CENTER);
 
-		tabs.onChange(tab -> cards.show(content, TABS[tab]));
+		tabs.onChange(tab ->
+		{
+			cards.show(content, TABS[tab]);
+			// The Journal's seal shows the run's length, so the crest does not repeat it there.
+			crest.showRun(tab != 1);
+			crest.update(situation, peril, journal);
+		});
 		rebuildWard();
 		rebuildJournal();
 	}
@@ -92,7 +119,13 @@ public class GuardianPanel extends PluginPanel
 	/** Called on the Swing thread whenever the live read changes. */
 	public void update(Situation situation, Peril peril)
 	{
+		boolean modeChanged = situation.isOneLife() != this.situation.isOneLife()
+			|| !java.util.Objects.equals(situation.getMode(), this.situation.getMode());
 		this.situation = situation;
+		if (modeChanged)
+		{
+			journalChanged();
+		}
 		this.peril = peril;
 		crest.update(situation, peril, journal);
 		// In a fight the read changes every tick; rebuilding a page nobody is looking at is wasted work.
@@ -106,6 +139,34 @@ public class GuardianPanel extends PluginPanel
 		}
 	}
 
+	/**
+	 * Called on the Swing thread when only the run energy has moved: the crest shows it and nothing below it is
+	 * rebuilt, since energy changes every few ticks while running and the pages show only whether it has run out.
+	 */
+	public void updateCrest(Situation situation)
+	{
+		this.situation = situation;
+		crest.update(situation, peril, journal);
+	}
+
+	/** Shows a tab as a click on it would: 0 Ward, 1 Journal, 2 Perils. */
+	void selectTab(int tab)
+	{
+		tabs.setSelected(tab, true);
+	}
+
+	/** The Journal page as it is now built, for tests. */
+	java.awt.Component journalPage()
+	{
+		return journalView.getViewport().getView();
+	}
+
+	/** The Ward page as it is now built, for tests that check it was not rebuilt. */
+	java.awt.Component wardView()
+	{
+		return ward.getViewport().getView();
+	}
+
 	@Override
 	public void onActivate()
 	{
@@ -113,6 +174,10 @@ public class GuardianPanel extends PluginPanel
 		if (wardStale)
 		{
 			rebuildWard();
+		}
+		if (journalStale)
+		{
+			rebuildJournal();
 		}
 	}
 
@@ -125,9 +190,59 @@ public class GuardianPanel extends PluginPanel
 	/** Called on the Swing thread with a private copy of the journal whenever it changes. */
 	public void updateJournal(Journal journal)
 	{
+		updateJournal(journal, hits);
+	}
+
+	/** Called on the Swing thread with private copies of the journal and the hit memory whenever they change. */
+	public void updateJournal(Journal journal, HitMemory hits)
+	{
 		this.journal = journal;
+		this.hits = hits;
 		crest.update(situation, peril, journal);
-		rebuildJournal();
+		journalChanged();
+	}
+
+	/** Where a click on "Mark as fallen" goes, with the time of the death it was on. */
+	public void setOnMarkFallen(java.util.function.LongConsumer onMarkFallen)
+	{
+		this.onMarkFallen = onMarkFallen == null ? at -> {} : onMarkFallen;
+	}
+
+	/** Called on the Swing thread with the account's worth from Codex Ledger, or -1 when there is none. */
+	public void updateWorth(long worth)
+	{
+		if (this.worth != worth)
+		{
+			this.worth = worth;
+			journalChanged();
+		}
+	}
+
+	/** The journal pages are rebuilt now if they can be seen, otherwise the next time the panel opens. */
+	private void journalChanged()
+	{
+		if (active || isShowing())
+		{
+			rebuildJournal();
+		}
+		else
+		{
+			journalStale = true;
+		}
+	}
+
+	/** Called on the Swing thread with a fresh trip check whenever the pack, the kit or the bank changes. */
+	public void updateTrip(TripCheck trip)
+	{
+		this.trip = trip;
+		if (active || isShowing())
+		{
+			rebuildWard();
+		}
+		else
+		{
+			wardStale = true;
+		}
 	}
 
 	public void setFoodReserve(int foodReserve)
@@ -139,13 +254,116 @@ public class GuardianPanel extends PluginPanel
 	private void rebuildWard()
 	{
 		wardStale = false;
-		replace(ward, WardView.build(situation, peril, gauge, foodReserve));
+		replace(ward, WardView.build(situation, peril, gauge, foodReserve, trip,
+			PlaceMemory.lines(journal, hits, PlaceMemory.placeOf(situation))));
 	}
 
 	private void rebuildJournal()
 	{
-		replace(journalView, JournalView.build(journal, situation.isOneLife(), System.currentTimeMillis(), newRunButton()));
-		replace(perils, PerilsView.build(journal));
+		journalStale = false;
+		replace(journalView, JournalView.build(journal, situation, System.currentTimeMillis(), newRunButton(), oneLifeButton(), worth,
+			this::fallenButton, shareButtons(), shareNote));
+		replace(perils, PerilsView.build(journal, hits));
+	}
+
+	/** Lets the journal save and copy the seal card; names go on it while the option is on. */
+	public void setShare(ShareActions share, java.util.function.BooleanSupplier nameOnCards)
+	{
+		setShare(share, nameOnCards, null);
+	}
+
+	/** As above; the account's worth goes on the card only while {@code worthOnCards} says so (off by default). */
+	public void setShare(ShareActions share, java.util.function.BooleanSupplier nameOnCards,
+		java.util.function.BooleanSupplier worthOnCards)
+	{
+		this.share = share;
+		this.nameOnCards = nameOnCards == null ? () -> true : nameOnCards;
+		this.worthOnCards = worthOnCards == null ? () -> false : worthOnCards;
+		journalChanged();
+	}
+
+	/** Shows what became of a save or copy under the seal. Swing thread only. */
+	public void shareNote(String note)
+	{
+		shareNote = note;
+		journalChanged();
+	}
+
+	/**
+	 * Save and copy for the seal card, or null when sharing is not set up, there is no run to show yet, or the
+	 * new-run button is asking for its second click and needs the room.
+	 */
+	private JComponent shareButtons()
+	{
+		if (share == null || journal == null || confirming || !situation.isLoggedIn())
+		{
+			return null;
+		}
+		JPanel buttons = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 0, 0));
+		buttons.setOpaque(false);
+		// Named as the other Codex plugins name theirs; on a row of their own, above "Start a new run".
+		CodexButton save = new CodexButton("Save seal card", false, () -> shareSeal(true));
+		save.setToolTipText("Save the run's seal as a picture to share");
+		CodexButton copy = new CodexButton("Copy", false, () -> shareSeal(false));
+		copy.setToolTipText("Copy the run's seal as a picture, ready to paste");
+		buttons.add(save);
+		buttons.add(javax.swing.Box.createHorizontalStrut(4));
+		buttons.add(copy);
+		return buttons;
+	}
+
+	private void shareSeal(boolean save)
+	{
+		long now = System.currentTimeMillis();
+		java.time.ZoneId zone = java.time.ZoneId.systemDefault();
+		String name = nameOnCards.getAsBoolean() && situation.isLoggedIn() ? situation.getPlayerName() : null;
+		SealShare.Spec spec = SealShare.Spec.of(journal, situation.isOneLife(), worth, name, situation.getMode(), now, zone,
+			worthOnCards.getAsBoolean());
+		if (spec == null || share == null)
+		{
+			return;
+		}
+		java.awt.image.BufferedImage card = SealShare.render(spec);
+		if (save)
+		{
+			share.save(card, SealShare.fileName(now, zone));
+		}
+		else
+		{
+			share.copy(card);
+		}
+	}
+
+	/** The per-account one-life switch, or null for a hardcore account, which is one-life by its nature. */
+	private CodexButton oneLifeButton()
+	{
+		if (!situation.isLoggedIn() || situation.getMode() != null && situation.getMode().startsWith("Hardcore"))
+		{
+			return null;
+		}
+		boolean on = situation.isOneLife();
+		return new CodexButton(on ? "Not one-life" : "Mark one-life", false, () -> onOneLife.accept(!on));
+	}
+
+	/** "Mark as fallen" under an unconfirmed death; like a new run, it takes a second click. */
+	private CodexButton fallenButton(Journal.Entry entry)
+	{
+		long at = entry.getAt();
+		boolean asking = markingAt == at;
+		return new CodexButton(asking ? "Click again: the run fell" : "Mark as fallen", asking, () ->
+		{
+			if (markingAt != at)
+			{
+				markingAt = at;
+				confirmTimeout.restart();
+				rebuildJournal();
+				return;
+			}
+			markingAt = -1;
+			confirmTimeout.stop();
+			rebuildJournal();
+			onMarkFallen.accept(at);
+		});
 	}
 
 	private CodexButton newRunButton()
@@ -165,6 +383,10 @@ public class GuardianPanel extends PluginPanel
 	private void setConfirming(boolean value)
 	{
 		confirming = value;
+		if (!value)
+		{
+			markingAt = -1;
+		}
 		if (value)
 		{
 			confirmTimeout.restart();

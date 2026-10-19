@@ -23,9 +23,17 @@ public final class Supplies
 	{
 		final String name;
 		final int quantity;
+		/** The item id, or -1 when the caller only knows the name. */
+		final int id;
 
 		public Item(String name, int quantity)
 		{
+			this(-1, name, quantity);
+		}
+
+		public Item(int id, String name, int quantity)
+		{
+			this.id = id;
 			this.name = name;
 			this.quantity = quantity;
 		}
@@ -49,11 +57,20 @@ public final class Supplies
 	private static final String[] TELEPORT_JEWELLERY = {"amulet of glory", "amulet of eternal glory", "combat bracelet",
 		"skills necklace", "ring of wealth", "ring of dueling", "games necklace", "necklace of passage", "digsite pendant",
 		"slayer ring", "royal seed pod", "teleport crystal", "eternal teleport crystal", "enchanted lyre", "xeric's talisman",
-		"drakan's medallion", "ectophial", "ring of the elements", "ring of shadows", "pharaoh's sceptre",
+		"drakan's medallion", "ectophial", "ring of the elements", "ring of shadows",
 		"construct. cape", "max cape", "crafting cape", "achievement diary cape", "ardougne cloak 2", "ardougne cloak 3",
 		"ardougne cloak 4", "explorer's ring 2", "explorer's ring 3", "explorer's ring 4", "karamja gloves 3",
 		"karamja gloves 4", "desert amulet 2", "desert amulet 3", "desert amulet 4", "quetzal whistle",
 		"ring of returning"};
+	/**
+	 * Pharaoh's sceptres that hold at least one charge. An empty sceptre keeps the bare name "Pharaoh's sceptre"
+	 * on its older ids, so its name alone never proves it will teleport: only one of these ids does.
+	 */
+	private static final Set<Integer> CHARGED_SCEPTRES = new HashSet<>(Arrays.asList(
+		26948, 26950, // the current charged sceptre, and the one handed out at Pyramid Plunder
+		9044, 9046, 9048, // the older 3, 2 and 1 charge sceptres (9050 is the empty one)
+		13074, 13075, 13076, 13077, 13078)); // the older 8 to 4 charge sceptres
+
 	/** Tablets and scrolls whose destination is itself in the Wilderness: not an escape. */
 	private static final String[] INTO_WILDERNESS = {"annakarl", "carrallanger", "carrallangar", "dareeyak", "ghorrock",
 		"cemetery", "ice plateau", "wilderness crabs", "revenant cave", "lava maze", "target teleport", "burning amulet"};
@@ -144,6 +161,32 @@ public final class Supplies
 		return b.build();
 	}
 
+	/**
+	 * Every potion dose carried, whatever the potion: what a replay counts as drinking. Jewellery shows its
+	 * charges the same way ("Amulet of glory(4)") and is left out, so a teleport is never counted as a drink.
+	 */
+	public static int potionDoses(List<Item> inventory)
+	{
+		int total = 0;
+		for (Item item : inventory)
+		{
+			Matcher m = DOSES.matcher(lower(item.name));
+			if (!m.matches())
+			{
+				continue;
+			}
+			String base = m.group(1);
+			if (CHARGED.contains(base) || base.contains("amulet") || base.contains("ring") || base.contains("necklace")
+				|| base.contains("bracelet") || base.contains("pendant") || base.contains("glory") || base.contains("crystal")
+				|| base.contains("lyre") || base.contains("talisman"))
+			{
+				continue;
+			}
+			total += Integer.parseInt(m.group(2)) * Math.max(1, item.quantity);
+		}
+		return total;
+	}
+
 	private static void readFood(Readiness.Builder b, Item item, int maxHitpoints)
 	{
 		String name = lower(item.name);
@@ -195,6 +238,10 @@ public final class Supplies
 		{
 			b.prayerDoses(doses);
 		}
+		if (base.startsWith("stamina ") || base.startsWith("energy ") || base.startsWith("super energy"))
+		{
+			b.energyDoses(doses);
+		}
 		if (base.contains("anti-venom") || base.equals("antidote++"))
 		{
 			b.antivenomDoses(doses);
@@ -214,6 +261,15 @@ public final class Supplies
 			{
 				return;
 			}
+		}
+		if (name.startsWith("pharaoh's sceptre"))
+		{
+			// Charged and empty sceptres can share a name; without a charged id it may not work, so it is no way out.
+			if (CHARGED_SCEPTRES.contains(item.id))
+			{
+				b.escape(item.name, 20);
+			}
+			return;
 		}
 		String base = name;
 		Integer charges = null;
