@@ -34,6 +34,8 @@ public final class Journal
 		Type type;
 		String title;
 		String detail;
+		/** The seconds around a close call or before a death, tick by tick; absent on older entries. */
+		Replay replay;
 
 		Entry(long at, Type type, String title, String detail)
 		{
@@ -61,6 +63,12 @@ public final class Journal
 		public String getDetail()
 		{
 			return detail;
+		}
+
+		/** The replay to draw, or null when there is none or a saved one is damaged. */
+		public Replay getReplay()
+		{
+			return replay != null && replay.isValid() ? replay : null;
 		}
 	}
 
@@ -93,6 +101,8 @@ public final class Journal
 	}
 
 	static final int MAX_ENTRIES = 250;
+	/** Replays are kept on this many of the newest entries that have one, so the save stays small (about 300 bytes each). */
+	static final int MAX_REPLAYS = 30;
 	/** Re-entering the same zone within this long does not write a new entry. */
 	static final long ZONE_REPEAT_MS = 30 * 60 * 1000L;
 
@@ -139,6 +149,13 @@ public final class Journal
 		}
 		lowestByPlace.values().removeIf(v -> v == null);
 		entries.removeIf(e -> e == null || e.type == null);
+		for (Entry e : entries)
+		{
+			if (e.replay != null && !e.replay.isValid())
+			{
+				e.replay = null;
+			}
+		}
 		// Older journals split Wilderness close calls by level; one row for the Wilderness ranks it honestly.
 		Map<String, Integer> places = new LinkedHashMap<>();
 		closeCallsByPlace.forEach((place, count) ->
@@ -194,6 +211,12 @@ public final class Journal
 
 	public void closeCall(int lowest, int max, String place, String source, long now)
 	{
+		closeCall(lowest, max, place, source, null, now);
+	}
+
+	/** Records a close call survived, with its replay when one was recorded. */
+	public void closeCall(int lowest, int max, String place, String source, Replay replay, long now)
+	{
 		closeCalls++;
 		String where = place == null ? "Gielinor" : place;
 		closeCallsByPlace.merge(area(where), 1, Integer::sum);
@@ -204,7 +227,7 @@ public final class Journal
 			lowestPlace = where;
 		}
 		String detail = "Down to " + lowest + "/" + max + " hitpoints " + at(where) + (source != null ? ", against " + source : "");
-		add(now, Type.CLOSE_CALL, "Survived a close call", detail);
+		add(now, Type.CLOSE_CALL, "Survived a close call", detail, replay);
 	}
 
 	/**
@@ -214,15 +237,21 @@ public final class Journal
 	 */
 	public void death(String place, String source, boolean oneLife, boolean safe, long now)
 	{
+		death(place, source, oneLife, safe, null, now);
+	}
+
+	/** Records a death with the replay of the seconds before it, when one was recorded. */
+	public void death(String place, String source, boolean oneLife, boolean safe, Replay replay, long now)
+	{
 		String detail = (place == null ? "Somewhere in Gielinor" : capitalise(at(place))) + (source != null ? ", to " + source : "");
 		if (safe)
 		{
 			safeDeaths++;
-			add(now, Type.SAFE_DEATH, "A safe death", detail);
+			add(now, Type.SAFE_DEATH, "A safe death", detail, replay);
 			return;
 		}
 		deaths++;
-		add(now, Type.DEATH, oneLife ? "The run has fallen" : "Died", detail);
+		add(now, Type.DEATH, oneLife ? "The run has fallen" : "Died", detail, replay);
 	}
 
 	/** Notes that the account is hardcore right now. */
@@ -350,7 +379,24 @@ public final class Journal
 
 	private void add(long at, Type type, String title, String detail)
 	{
-		entries.add(new Entry(at, type, title, detail));
+		add(at, type, title, detail, null);
+	}
+
+	private void add(long at, Type type, String title, String detail, Replay replay)
+	{
+		Entry entry = new Entry(at, type, title, detail);
+		entry.replay = replay != null && replay.isValid() ? replay : null;
+		entries.add(entry);
+		int kept = 0;
+		for (int i = entries.size() - 1; i >= 0; i--)
+		{
+			Entry e = entries.get(i);
+			// A death keeps its replay for as long as the entry lasts; it is the one most worth reading.
+			if (e.replay != null && e.type != Type.DEATH && ++kept > MAX_REPLAYS)
+			{
+				e.replay = null;
+			}
+		}
 		while (entries.size() > MAX_ENTRIES)
 		{
 			// Keep the first entry, deaths and status changes; drop the oldest of the rest.

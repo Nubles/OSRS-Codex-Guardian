@@ -16,6 +16,7 @@ import com.codex.guardian.core.Risk;
 import com.codex.guardian.core.Situation;
 import com.codex.guardian.core.Supplies;
 import com.codex.guardian.core.Threat;
+import com.codex.guardian.core.Replay;
 import com.codex.guardian.core.SharedBank;
 import com.codex.guardian.core.TripCheck;
 import com.codex.guardian.core.Zone;
@@ -151,6 +152,8 @@ public class CodexGuardianPlugin extends Plugin
 	private final DamageLog damage = new DamageLog();
 	private final CloseCallWatch closeCalls = new CloseCallWatch();
 	private final Lag lag = new Lag();
+	/** The last minute of hitpoints, hits, food and potions, cut into a replay when a close call ends or a death comes. */
+	private final Replay.Recorder recorder = new Replay.Recorder();
 	private HitMemory hits = new HitMemory();
 	private boolean hitsChanged;
 	private Lag.State lastLag = Lag.State.STEADY;
@@ -286,6 +289,7 @@ public class CodexGuardianPlugin extends Plugin
 		lowHitpointsNotified = false;
 		lastHitSource = null;
 		lag.reset();
+		recorder.clear();
 		lastLag = Lag.State.STEADY;
 		accountType = -1;
 		lastCombatLevel = -1;
@@ -472,6 +476,7 @@ public class CodexGuardianPlugin extends Plugin
 		}
 		damage.hit(amount);
 		String source = sourceOf(hitsplat.getHitsplatType(), local);
+		recorder.hit(amount, source);
 		lastHitSource = source;
 		rememberHit(hitsplat.getHitsplatType(), amount, local);
 		if (journal != null)
@@ -497,8 +502,10 @@ public class CodexGuardianPlugin extends Plugin
 		{
 			return;
 		}
+		// The killing blow is still waiting for the next tick; record it now so the replay ends at zero.
+		recorder.tick(0, situation.getMaxHitpoints(), readiness.getFoodCount(), Supplies.potionDoses(lastInventory));
 		journal.death(place(situation), lastHitSource, situation.isOneLife(), situation.risk() == Risk.SAFE,
-			System.currentTimeMillis());
+			recorder.death(), System.currentTimeMillis());
 		journalChanged = true;
 		closeCalls.reset();
 		damage.clear();
@@ -523,6 +530,7 @@ public class CodexGuardianPlugin extends Plugin
 		lag.tick(System.nanoTime() / 1_000_000L);
 
 		Situation s = read(local);
+		recorder.tick(s.getHitpoints(), s.getMaxHitpoints(), readiness.getFoodCount(), Supplies.potionDoses(lastInventory));
 		updateTrip();
 		if (tripBriefPending)
 		{
@@ -915,9 +923,13 @@ public class CodexGuardianPlugin extends Plugin
 	private void watchCloseCall(Situation s, long now)
 	{
 		CloseCallWatch.Result r = closeCalls.update(s.getHitpoints(), s.getMaxHitpoints(), config.closeCallPercent(), place(s), strongestName(s));
+		if (closeCalls.isActive())
+		{
+			recorder.mark();
+		}
 		if (r != null)
 		{
-			journal.closeCall(r.lowest, s.getMaxHitpoints(), r.place, r.source, now);
+			journal.closeCall(r.lowest, s.getMaxHitpoints(), r.place, r.source, recorder.closeCall(), now);
 			journalChanged = true;
 		}
 	}
@@ -1468,6 +1480,7 @@ public class CodexGuardianPlugin extends Plugin
 		}
 		journal = Journal.fresh(System.currentTimeMillis());
 		closeCalls.reset();
+		recorder.unmark();
 		saveJournal();
 		publishJournal();
 	}

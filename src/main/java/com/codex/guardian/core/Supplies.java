@@ -144,6 +144,32 @@ public final class Supplies
 		return b.build();
 	}
 
+	/**
+	 * Every potion dose carried, whatever the potion: what a replay counts as drinking. Jewellery shows its
+	 * charges the same way ("Amulet of glory(4)") and is left out, so a teleport is never counted as a drink.
+	 */
+	public static int potionDoses(List<Item> inventory)
+	{
+		int total = 0;
+		for (Item item : inventory)
+		{
+			Matcher m = DOSES.matcher(lower(item.name));
+			if (!m.matches())
+			{
+				continue;
+			}
+			String base = m.group(1);
+			if (CHARGED.contains(base) || base.contains("amulet") || base.contains("ring") || base.contains("necklace")
+				|| base.contains("bracelet") || base.contains("pendant") || base.contains("glory") || base.contains("crystal")
+				|| base.contains("lyre") || base.contains("talisman"))
+			{
+				continue;
+			}
+			total += Integer.parseInt(m.group(2)) * Math.max(1, item.quantity);
+		}
+		return total;
+	}
+
 	private static void readFood(Readiness.Builder b, Item item, int maxHitpoints)
 	{
 		String name = lower(item.name);

@@ -1,6 +1,7 @@
 package com.codex.guardian.ui;
 
 import com.codex.guardian.core.Journal;
+import com.codex.guardian.core.Replay;
 import com.codex.guardian.core.Situation;
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
@@ -125,6 +126,20 @@ final class JournalView
 			JLabel detail = Ui.wrapped(e.getDetail(), Theme.small(), Theme.TEXT_MUTED, TEXT);
 			detail.setAlignmentX(0f);
 			text.add(detail);
+		}
+		Replay replay = e.getReplay();
+		if (replay != null)
+		{
+			JPanel strip = new JPanel(new BorderLayout());
+			strip.setOpaque(false);
+			strip.setBorder(new EmptyBorder(4, 0, 2, 0));
+			strip.add(new ReplayStrip(replay, TEXT), BorderLayout.CENTER);
+			strip.setAlignmentX(0f);
+			strip.setMaximumSize(new java.awt.Dimension(TEXT, ReplayStrip.HEIGHT + 6));
+			text.add(strip);
+			JLabel line = Ui.wrapped(replay.summary(), Theme.small(), Theme.TEXT_FAINT, TEXT);
+			line.setAlignmentX(0f);
+			text.add(line);
 		}
 		row.add(text, BorderLayout.CENTER);
 		// The glyph column stretches with the text so the thread reaches the next entry.
