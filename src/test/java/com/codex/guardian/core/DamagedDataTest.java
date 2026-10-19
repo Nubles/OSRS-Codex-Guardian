@@ -127,6 +127,38 @@ public class DamagedDataTest
 	}
 
 	@Test
+	public void fieldsFromANewerGuardianAreKeptAside()
+	{
+		// A newer Guardian adds a field to the journal and to an entry. Gson reads past both without an error, so the
+		// read used to say nothing was left out and the next save wrote over them for good.
+		JsonObject saved = GSON.toJsonTree(journal()).getAsJsonObject();
+		saved.addProperty("sailingDeaths", 3);
+		saved.getAsJsonArray("entries").get(0).getAsJsonObject().addProperty("world", 302);
+		SavedJson.Read<Journal> read = Journal.load(GSON, GSON.toJson(saved));
+		assertTrue(read.isDamaged());
+		assertEquals(2, read.getValue().getCloseCalls());
+
+		JsonObject entryOnly = GSON.toJsonTree(journal()).getAsJsonObject();
+		entryOnly.getAsJsonArray("entries").get(0).getAsJsonObject().addProperty("world", 302);
+		assertTrue(Journal.load(GSON, GSON.toJson(entryOnly)).isDamaged());
+
+		// The same for the hit memory.
+		HitMemory hits = new HitMemory();
+		hits.record("Vorkath", 732, 32, "Vorkath", NOW);
+		JsonObject memory = GSON.toJsonTree(hits).getAsJsonObject();
+		assertFalse(HitMemory.load(GSON, GSON.toJson(memory)).isDamaged());
+		memory.addProperty("version", 2);
+		assertTrue(HitMemory.load(GSON, GSON.toJson(memory)).isDamaged());
+
+		// What this version writes reads back whole, so a normal save is never kept aside; a field saved as null
+		// was nothing to lose.
+		assertFalse(Journal.load(GSON, GSON.toJson(journal())).isDamaged());
+		JsonObject withNull = GSON.toJsonTree(journal()).getAsJsonObject();
+		withNull.add("lowestPlace", com.google.gson.JsonNull.INSTANCE);
+		assertFalse(Journal.load(GSON, GSON.toJson(withNull)).isDamaged());
+	}
+
+	@Test
 	public void absurdFiguresAreBroughtBackToSense()
 	{
 		SavedJson.Read<Journal> read = Journal.load(GSON, "{\"runStartedAt\":1,\"playedTicks\":9000000000000000000,"
@@ -192,8 +224,12 @@ public class DamagedDataTest
 		Journal j = Journal.load(GSON, json).getValue();
 		long ms = (System.nanoTime() - start) / 1_000_000;
 		System.out.println("12,000 entry journal read in " + ms + " ms");
-		assertTrue(ms + " ms", ms < 150);
+		// Only damage reaches this size (a journal keeps 250 entries, read in about 5 ms); it is read once, at login,
+		// and also checked for anything a newer version wrote, so the bound is loose.
+		assertTrue(ms + " ms", ms < 400);
 		assertEquals(Journal.MAX_ENTRIES, j.getEntries().size());
+		// Trimmed to what this version keeps, so the saved text is kept aside first.
+		assertTrue(Journal.load(GSON, json).isDamaged());
 		// A damaged one that size is taken apart without freezing.
 		saved.addProperty("deaths", "none");
 		start = System.nanoTime();
@@ -274,6 +310,12 @@ public class DamagedDataTest
 		assertTrue(upper.isOneLife());
 		assertTrue(upper.shouldSave());
 		assertFalse(OneLife.resolve("true", false, true).shouldSave());
+		// Anything else is replaced at login, so the plugin keeps its text aside first.
+		assertTrue(OneLife.readable(" TRUE ") && OneLife.readable("false"));
+		for (String value : Arrays.asList("yes", "1", "{\"oneLife\":true,\"since\":1}", "", "null"))
+		{
+			assertFalse(value, OneLife.readable(value));
+		}
 	}
 
 	@Test

@@ -58,6 +58,13 @@ public final class OneLife
 		return new Decision(legacyGlobal && hadJournal, true);
 	}
 
+	/** True for a saved choice this version reads: "true" or "false", in any case, with any spaces around it. */
+	public static boolean readable(String saved)
+	{
+		String choice = saved == null ? "" : saved.trim();
+		return "true".equalsIgnoreCase(choice) || "false".equalsIgnoreCase(choice);
+	}
+
 	/**
 	 * Whether the world is a Hardcore World, where every account has one life. Matched by the world type's name, so
 	 * a client too old to know the type simply reads false and the account's own choice stands.

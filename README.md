@@ -71,7 +71,7 @@ Guardian works on its own. With these installed it knows more, and only ever rea
 
 ## Privacy and rules
 
-Guardian only reads what the client already shows you: your stats, inventory and worn items, your position and who is attacking you. It warns about situations in general and never about what a particular boss is about to do. It does not click, change menus, send chat or touch the network. The journal and hit memory are saved per account in your RuneLite profile and never leave your computer. If a saved journal is ever damaged, Guardian keeps every part it can read, and keeps the saved text aside (as `journalUnreadable`) rather than writing over it.
+Guardian only reads what the client already shows you: your stats, inventory and worn items, your position and who is attacking you. It warns about situations in general and never about what a particular boss is about to do. It does not click, change menus, send chat or touch the network. The journal and hit memory are saved per account in your RuneLite profile and never leave your computer. If a saved journal, hit memory or one-life choice is ever damaged, or holds something only a newer Guardian understands, Guardian keeps every part it can read and keeps the saved text aside (as `journalUnreadable`, `hitMemoryUnreadable` or `oneLifeAccountUnreadable`) rather than writing over it.
 
 ## Development
 

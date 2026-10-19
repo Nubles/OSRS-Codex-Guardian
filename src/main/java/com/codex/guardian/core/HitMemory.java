@@ -79,7 +79,9 @@ public final class HitMemory
 	{
 		SavedJson.Read<HitMemory> read = SavedJson.read(gson, json, HitMemory.class);
 		HitMemory memory = read.getValue() == null ? new HitMemory() : read.getValue();
-		return new SavedJson.Read<>(memory.repair(), read.isDamaged());
+		// More records than this version keeps: the repair trims them, so the saved text is kept aside first.
+		boolean trimmed = memory.records != null && memory.records.size() > MAX_RECORDS;
+		return new SavedJson.Read<>(memory.repair(), read.isDamaged() || trimmed);
 	}
 
 	public HitMemory repair()

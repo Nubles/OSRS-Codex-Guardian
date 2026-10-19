@@ -54,10 +54,10 @@ public final class KitPlan
 		}
 	}
 
-	/** Quartermaster's built-in kits are not saved in its data, only chosen by id; their names are these. */
 	/** More of one supply than this on one trip is damage, not a plan. */
 	static final int MAX_PER_TRIP = 5_000;
 
+	/** Quartermaster's built-in kits are not saved in its data, only chosen by id; their names are these. */
 	private static final Map<String, String> PRESETS = new HashMap<>();
 
 	static

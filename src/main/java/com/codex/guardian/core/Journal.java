@@ -152,7 +152,9 @@ public final class Journal
 		// An entry of a kind this version does not know (from a newer Guardian) reads with no kind and is dropped by
 		// the repair; flagged so the saved text is kept aside rather than lost at the next save.
 		boolean unknown = journal.entries != null && journal.entries.stream().anyMatch(e -> e != null && e.type == null);
-		return new SavedJson.Read<>(journal.repair(), read.isDamaged() || unknown);
+		// More entries than this version keeps (a newer one may keep more): the repair trims them, so keep the text.
+		boolean trimmed = journal.entries != null && journal.entries.size() > MAX_ENTRIES;
+		return new SavedJson.Read<>(journal.repair(), read.isDamaged() || unknown || trimmed);
 	}
 
 	/**

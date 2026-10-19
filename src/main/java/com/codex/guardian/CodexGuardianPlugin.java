@@ -1328,8 +1328,10 @@ public class CodexGuardianPlugin extends Plugin
 		journalProfile = profile;
 		hits = loadHits(profile);
 		hitsChanged = false;
-		OneLife.Decision oneLife = OneLife.resolve(configManager.getConfiguration(CodexGuardianConfig.GROUP, profile, ONE_LIFE_KEY),
-			config.oneLife(), loaded != null);
+		String choice = configManager.getConfiguration(CodexGuardianConfig.GROUP, profile, ONE_LIFE_KEY);
+		// A choice in a shape this version does not read is replaced below; the text is kept aside first.
+		keepAside(profile, ONE_LIFE_KEY, choice, choice != null && !choice.trim().isEmpty() && !OneLife.readable(choice));
+		OneLife.Decision oneLife = OneLife.resolve(choice, config.oneLife(), loaded != null);
 		accountOneLife = oneLife.isOneLife();
 		if (oneLife.shouldSave())
 		{
