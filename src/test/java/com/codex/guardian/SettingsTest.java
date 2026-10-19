@@ -64,4 +64,23 @@ public class SettingsTest
 		}
 		assertFalse(names.isEmpty());
 	}
+
+	@Test
+	public void savedSettingsKeepTheirKeys()
+	{
+		// A setting's key is where its value is saved: renaming one quietly resets it for every player who changed it.
+		Set<String> keys = new HashSet<>();
+		for (Method m : CodexGuardianConfig.class.getMethods())
+		{
+			ConfigItem item = m.getAnnotation(ConfigItem.class);
+			if (item != null)
+			{
+				keys.add(item.keyName());
+			}
+		}
+		for (String key : new String[]{"briefings", "closeCallPercent", "foodReserve", "lowHitpointsPercent", "nameOnCard", "notifyLag", "notifyLowHitpoints", "notifyPeril", "notifyTeleportLimit", "notifyZone", "oneLife", "perilVignette", "plaqueMode", "worthOnCard"})
+		{
+			assertTrue(key, keys.contains(key));
+		}
+	}
 }
