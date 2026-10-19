@@ -65,6 +65,25 @@ public class ReplayTest
 	}
 
 	@Test
+	public void theFallLineCountsOnlyTheHitsOfTheFall()
+	{
+		Replay.Recorder r = new Replay.Recorder();
+		calm(r, 4, 10);
+		// Chip damage while still healthy, then two big hits.
+		int[][] ticks = {{84, 6}, {80, 4}, {78, 2}, {40, 38}, {10, 30}};
+		for (int[] t : ticks)
+		{
+			r.hit(t[1], "Pker");
+			r.tick(t[0], 90, 10, 8);
+		}
+		r.mark();
+		Replay replay = r.death();
+		// 68 came off in the two ticks of the fall; the 12 of chip damage before it is not part of that story.
+		assertEquals(68, replay.damageToLowest());
+		assertEquals("Took 68 in 1s · nothing eaten", replay.summary());
+	}
+
+	@Test
 	public void bankingIsNotEatingAndADeathKeepsItsLastSeconds()
 	{
 		Replay.Recorder r = new Replay.Recorder();

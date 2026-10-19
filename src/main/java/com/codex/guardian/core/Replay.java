@@ -91,11 +91,15 @@ public final class Replay
 			&& drank != null && drank.length == n;
 	}
 
-	/** Damage taken from the first tick up to and including the lowest point. */
+	/**
+	 * Damage taken over the fall ({@link #fallTicks}): the hits after its starting tick up to and including the
+	 * lowest point, so chip damage taken while still healthy is not counted in "Took 68 in 1s".
+	 */
 	public int damageToLowest()
 	{
 		int total = 0;
-		for (int i = 0; i <= lowestIndex(); i++)
+		int low = lowestIndex();
+		for (int i = fallStart() + (low > 0 ? 1 : 0); i <= low; i++)
 		{
 			total += hit[i];
 		}
@@ -108,6 +112,12 @@ public final class Replay
 	 */
 	public int fallTicks()
 	{
+		return Math.max(1, lowestIndex() - fallStart());
+	}
+
+	/** The last tick before the lowest point at or above three quarters of the starting hitpoints, or 0. */
+	private int fallStart()
+	{
 		int low = lowestIndex();
 		int from = 0;
 		int top = hp[0];
@@ -118,7 +128,7 @@ public final class Replay
 				from = i;
 			}
 		}
-		return Math.max(1, low - from);
+		return from;
 	}
 
 	public int totalAte()

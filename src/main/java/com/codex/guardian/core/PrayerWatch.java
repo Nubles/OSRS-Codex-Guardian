@@ -72,7 +72,15 @@ public final class PrayerWatch
 		}
 		int span = lastTick - firstTick;
 		int drop = firstPoints - lastPoints;
-		return firstTick >= 0 && span >= MIN_TICKS && drop >= MIN_DROP ? drop / (double) span : 0;
+		if (firstTick < 0 || span < MIN_TICKS || drop < MIN_DROP)
+		{
+			return 0;
+		}
+		double rate = drop / (double) span;
+		// No fall for longer than two of the drain's own steps: the prayers were turned off (or ran out), so
+		// the drain measured before is no longer what is happening.
+		int newest = ticks[(head - 1 + WINDOW) % WINDOW];
+		return newest - lastTick > 2 / rate + 1 ? 0 : rate;
 	}
 
 	/** Forgets everything, as at logout. */

@@ -40,6 +40,13 @@ public final class SharedBank
 			{
 				return null;
 			}
+			JsonElement truncated = root.getAsJsonObject().get("truncated");
+			if (truncated != null && truncated.isJsonPrimitive() && truncated.getAsJsonPrimitive().isBoolean()
+				&& truncated.getAsBoolean())
+			{
+				// Part of the bank was left out: "none banked" could be wrong, so this is no bank at all.
+				return null;
+			}
 			JsonElement items = root.getAsJsonObject().get("items");
 			if (items == null || !items.isJsonObject())
 			{

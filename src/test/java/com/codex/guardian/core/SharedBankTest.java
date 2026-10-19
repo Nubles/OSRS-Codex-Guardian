@@ -101,6 +101,8 @@ public class SharedBankTest
 		assertNull(SharedBank.read(GSON, "{\"version\":1}"));
 		assertNull(SharedBank.read(GSON, "{\"items\":[1]}"));
 		assertNull(SharedBank.byName(null, SharedBankTest::name));
+		// A cut-short snapshot cannot prove an item is not banked, so it is not taken as the whole bank.
+		assertNull(SharedBank.read(GSON, "{\"version\":1,\"items\":{\"2570\":2},\"truncated\":true}"));
 		// Odd entries are skipped, the rest is kept; a later version that adds fields still reads.
 		Map<Integer, Long> odd = SharedBank.read(GSON, "{\"version\":2,\"items\":{\"x\":1,\"385\":\"many\",\"2570\":2,\"-4\":9,\"995\":0},\"more\":true}");
 		assertEquals(Collections.singletonMap(ItemID.RING_OF_LIFE, 2L), odd);

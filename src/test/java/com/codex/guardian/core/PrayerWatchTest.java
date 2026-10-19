@@ -69,6 +69,23 @@ public class PrayerWatchTest
 	}
 
 	@Test
+	public void prayersTurnedOffStopTheEstimateWithinAFewTicks()
+	{
+		PrayerWatch w = new PrayerWatch();
+		// A point every 3 ticks for 18 ticks, then prayers off: no fall for well over two of those intervals.
+		int points = drain(w, 60, 3, 18, 0);
+		assertTrue(w.secondsLeft(points) > 0);
+		for (int t = 18; t < 26; t++)
+		{
+			w.observe(points, t);
+		}
+		assertEquals("a flat stretch longer than two drain steps means prayer is off", -1, w.secondsLeft(points));
+		// Back on: measured afresh.
+		drain(w, points, 3, 12, 26);
+		assertTrue(w.getRate() > 0);
+	}
+
+	@Test
 	public void roundedDownForThePanel()
 	{
 		assertEquals(-1, PrayerWatch.rounded(-1));
