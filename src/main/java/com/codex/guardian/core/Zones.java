@@ -221,7 +221,7 @@ public final class Zones
 		String advice;
 		if (level > 30)
 		{
-			advice = "Level " + level + ". No teleport works up here and other players can attack you. Walk south.";
+			advice = "Level " + level + ". No teleport works up here and other players can attack you. Get down to level 30.";
 		}
 		else if (level > 20)
 		{

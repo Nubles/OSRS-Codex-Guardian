@@ -52,23 +52,33 @@ public final class Advice
 				{
 					return "Eat now and back away";
 				}
+				// South only lowers the level where the coordinates are on the Wilderness map; it only leads out of
+				// the Wilderness on the surface. Anywhere else (a boss lair, an unmapped cave) no direction is given.
+				boolean southLowers = toReach >= 0;
+				boolean southLeadsOut = toDitch >= 0;
 				if (walkBack)
 				{
 					if (s.cannotRun() && r.getEnergyDoses() > 0)
 					{
 						// The plaque has room for one short line; the Ward's place card carries the tile count.
-						return "Eat, sip energy, run south";
+						return southLowers ? "Eat, sip energy, run south" : "Eat, sip energy, run";
 					}
-					return toReach > 0 ? "Eat, walk " + toReach + " tiles south" : "Eat, walk south to level " + walkTo;
+					return toReach > 0 ? "Eat, walk " + toReach + " tiles south"
+						: southLowers ? "Eat, walk south to level " + walkTo : "Eat, walk to level " + walkTo;
 				}
-				return s.cannotRun() && r.getEnergyDoses() > 0 ? "Eat, sip energy, run south" : "Eat, and run south";
+				if (s.cannotRun() && r.getEnergyDoses() > 0)
+				{
+					return southLeadsOut ? "Eat, sip energy, run south" : "Eat, sip, run for the exit";
+				}
+				return southLeadsOut ? "Eat, and run south" : "Eat, and run for the exit";
 			}
 			if (wild > 0)
 			{
+				// Underground there is no ditch to the south: the way out is a ladder or a cave mouth.
 				String run = walkBack && toReach > 0 ? "Run " + toReach + " tiles south" : toDitch > 0 ? "Run " + toDitch + " tiles south"
-					: "Run south now";
+					: "Run for the exit now";
 				// Out of energy, the run is a walk: a sip first is what makes it a run again.
-				return s.cannotRun() && r.getEnergyDoses() > 0 ? "Sip energy, run south now" : run;
+				return s.cannotRun() && r.getEnergyDoses() > 0 ? (toDitch >= 0 ? "Sip energy, run south now" : "Sip energy, run for the exit") : run;
 			}
 			return s.isTeleblocked() ? "Run: teleblocked, no food" : "Run: no food, no teleport";
 		}
@@ -86,7 +96,7 @@ public final class Advice
 		if (wild > 0 && !escape && walkBack)
 		{
 			int toReach = s.getTilesToReach();
-			return toReach > 0 ? "Walk " + toReach + " tiles south" : "Walk south to level " + walkTo;
+			return toReach > 0 ? "Walk " + toReach + " tiles south" : toReach == 0 ? "Walk south to level " + walkTo : "Walk to level " + walkTo;
 		}
 		if (!food && s.inHarmsWay())
 		{
@@ -111,7 +121,9 @@ public final class Advice
 			return toDitch > 0 ? "Run " + toDitch + " tiles south" : "Leave the Wilderness";
 		}
 		int toReach = s.getTilesToReach();
-		return toReach > 0 ? "Walk " + toReach + " tiles south" : "Walk south to level " + Math.max(0, s.getReadiness().getEscapeReach());
+		int reach = Math.max(0, s.getReadiness().getEscapeReach());
+		// Off the Wilderness map (a boss lair, an unmapped cave) south is no promise, so no direction is given.
+		return toReach > 0 ? "Walk " + toReach + " tiles south" : toReach == 0 ? "Walk south to level " + reach : "Walk to level " + reach;
 	}
 
 	/** A short name for a carried teleport, so it fits a plaque line. */

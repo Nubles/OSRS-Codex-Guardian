@@ -52,8 +52,35 @@ public class AdviceTest
 	@Test
 	public void pastTheTeleportLimitSaysWalkSouth()
 	{
-		Situation s = fight(15, 8).zone(Zones.wilderness(25)).wilderness(25, false).readiness(kit("Shark", "Varrock teleport")).build();
-		assertEquals("Eat, walk south to level 20", advise(s));
+		Situation s = fight(15, 8).zone(Zones.wilderness(25)).wilderness(25, false).distances(40, 200)
+			.readiness(kit("Shark", "Varrock teleport")).build();
+		assertEquals("Eat, walk 40 tiles south", advise(s));
+		// Off the Wilderness map (a boss lair the game calls level 25) no direction is promised.
+		Situation lair = fight(15, 8).zone(Zones.wilderness(25)).wilderness(25, false).readiness(kit("Shark", "Varrock teleport")).build();
+		assertEquals("Eat, walk to level 20", advise(lair));
+	}
+
+	@Test
+	public void undergroundNoDirectionIsPromisedForTheWayOut()
+	{
+		// The Revenant Caves at level 35: south lowers the level, but there is no ditch, so the way out is the exit.
+		int toDitch = Zones.tilesSouthTo(3200, 10199, 0);
+		assertEquals(-1, toDitch);
+		Situation.Builder caves = fight(15, 8).zone(Zones.wilderness(35)).wilderness(35, false).distances(-1, toDitch);
+		assertEquals("Eat, and run for the exit", advise(caves.readiness(kit("Shark")).build()));
+		assertEquals("Run for the exit now", advise(fight(15, 8).zone(Zones.wilderness(35)).wilderness(35, false)
+			.distances(-1, toDitch).readiness(Readiness.empty()).build()));
+		Situation stuck = fight(15, 8).zone(Zones.wilderness(35)).wilderness(35, false).distances(-1, toDitch).runEnergy(2)
+			.readiness(kit("Stamina potion(2)")).build();
+		assertEquals("Sip energy, run for the exit", advise(stuck));
+		Situation stuckFed = fight(15, 8).zone(Zones.wilderness(35)).wilderness(35, false).distances(-1, toDitch).runEnergy(2)
+			.readiness(kit("Shark", "Stamina potion(2)")).build();
+		assertEquals("Eat, sip, run for the exit", advise(stuckFed));
+		// Underground a teleport's reach is still south: the level lines run east to west there too.
+		int toReach = Zones.tilesSouthTo(3200, 10199, 30);
+		assertEquals(40, toReach);
+		assertEquals("Eat, walk 40 tiles south", advise(fight(15, 8).zone(Zones.wilderness(35)).wilderness(35, false)
+			.distances(toReach, toDitch).readiness(kit("Shark", "Amulet of glory(4)")).build()));
 	}
 
 	@Test
@@ -72,7 +99,7 @@ public class AdviceTest
 	public void teleblockedNeverSaysTeleport()
 	{
 		// A PKer's Tele Block at level 10: the glory works at this level, but nothing will teleport you.
-		Situation s = fight(20, 25).zone(Zones.wilderness(10)).wilderness(10, false).teleblocked(true)
+		Situation s = fight(20, 25).zone(Zones.wilderness(10)).wilderness(10, false).distances(-1, 72).teleblocked(true)
 			.readiness(kit("Shark", "Amulet of glory(4)")).build();
 		assertEquals("Eat, and run south", advise(s));
 		Situation noFood = fight(20, 25).teleblocked(true).readiness(kit("Amulet of glory(4)")).build();
@@ -82,7 +109,7 @@ public class AdviceTest
 	@Test
 	public void noTeleportAtAllDoesNotPromiseLevelTwenty()
 	{
-		Situation s = fight(15, 8).zone(Zones.wilderness(25)).wilderness(25, false).readiness(kit("Shark")).build();
+		Situation s = fight(15, 8).zone(Zones.wilderness(25)).wilderness(25, false).distances(-1, 192).readiness(kit("Shark")).build();
 		assertEquals("Eat, and run south", advise(s));
 	}
 
