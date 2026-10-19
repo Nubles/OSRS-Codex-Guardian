@@ -93,7 +93,7 @@ public final class SharedBank
 			String name = names.apply(e.getKey());
 			if (name != null && !name.isEmpty() && !"null".equalsIgnoreCase(name))
 			{
-				out.add(new Supplies.Item(name, (int) Math.min(Integer.MAX_VALUE, e.getValue())));
+				out.add(new Supplies.Item(e.getKey(), name, (int) Math.min(Integer.MAX_VALUE, e.getValue())));
 			}
 		}
 		return out;

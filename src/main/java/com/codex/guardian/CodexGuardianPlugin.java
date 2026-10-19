@@ -710,7 +710,7 @@ public class CodexGuardianPlugin extends Plugin
 			{
 				continue;
 			}
-			list.add(new Supplies.Item(def.getName(), item.getQuantity()));
+			list.add(new Supplies.Item(item.getId(), def.getName(), item.getQuantity()));
 		}
 		return list;
 	}
