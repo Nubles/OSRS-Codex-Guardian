@@ -18,7 +18,8 @@ import javax.swing.border.EmptyBorder;
 
 /**
  * The crest at the top of the panel: the hitpoint shield, the account's name and mode, and three ledgers for
- * prayer, run energy and the length of the run. The close calls are the seal's to tell, so they are not repeated here.
+ * prayer, run energy and the length of the run. The close calls are the seal's to tell, so they are not repeated here;
+ * on the Journal tab the seal's face shows the run's length too, so there the third ledger shows the combat level.
  */
 public class WardCrest extends JPanel
 {
@@ -29,6 +30,8 @@ public class WardCrest extends JPanel
 	private final Ledger run = new Ledger("This run", false);
 	private final Ledger energy = new Ledger("Run energy", true);
 	private Peril.Level level = Peril.Level.CALM;
+	/** False on the Journal tab, where the seal shows the run's length. */
+	private boolean showRun = true;
 
 	public WardCrest()
 	{
@@ -60,6 +63,12 @@ public class WardCrest extends JPanel
 		add(right, BorderLayout.CENTER);
 	}
 
+	/** Whether the third ledger shows the run's length (true) or, where the seal already does, the combat level. */
+	public void showRun(boolean value)
+	{
+		showRun = value;
+	}
+
 	public void update(Situation s, Peril peril, Journal journal)
 	{
 		boolean in = s.isLoggedIn();
@@ -79,7 +88,16 @@ public class WardCrest extends JPanel
 		}
 		boolean energyKnown = in && s.getRunEnergy() >= 0;
 		energy.set(energyKnown ? s.getRunEnergy() + "%" : "-", energyKnown ? s.getRunEnergy() / 100.0 : 0);
-		run.set(journal == null ? "-" : Format.runTime(journal.getPlayedTicks()), -1);
+		if (showRun)
+		{
+			run.label("This run");
+			run.set(journal == null ? "-" : Format.runTime(journal.getPlayedTicks()), -1);
+		}
+		else
+		{
+			run.label("Combat");
+			run.set(in && s.getCombatLevel() > 0 ? String.valueOf(s.getCombatLevel()) : "-", -1);
+		}
 		repaint();
 	}
 
@@ -114,6 +132,7 @@ public class WardCrest extends JPanel
 	private static final class Ledger extends JPanel
 	{
 		private final JLabel value = Ui.label("-", Theme.small(), Theme.TEXT);
+		private final JLabel name;
 		private final ProgressBar bar;
 
 		Ledger(String label, boolean withBar)
@@ -122,7 +141,8 @@ public class WardCrest extends JPanel
 			setOpaque(false);
 			JPanel line = new JPanel(new BorderLayout());
 			line.setOpaque(false);
-			line.add(Ui.label(label, Theme.small(), Theme.TEXT_MUTED), BorderLayout.WEST);
+			name = Ui.label(label, Theme.small(), Theme.TEXT_MUTED);
+			line.add(name, BorderLayout.WEST);
 			line.add(value, BorderLayout.EAST);
 			add(line, BorderLayout.CENTER);
 			bar = withBar ? new ProgressBar(3) : null;
@@ -131,6 +151,11 @@ public class WardCrest extends JPanel
 				add(bar, BorderLayout.SOUTH);
 			}
 			setPreferredSize(new Dimension(10, 17));
+		}
+
+		void label(String text)
+		{
+			name.setText(text);
 		}
 
 		void set(String text, double share)

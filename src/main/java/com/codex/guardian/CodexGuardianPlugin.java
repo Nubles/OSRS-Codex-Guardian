@@ -19,6 +19,7 @@ import com.codex.guardian.core.Threat;
 import com.codex.guardian.core.PrayerWatch;
 import com.codex.guardian.core.Replay;
 import com.codex.guardian.core.LedgerWorth;
+import com.codex.guardian.core.SavedJson;
 import com.codex.guardian.core.SharedBank;
 import com.codex.guardian.core.TripCheck;
 import com.codex.guardian.core.Zone;
@@ -31,6 +32,7 @@ import com.codex.guardian.ui.ShareActions;
 import com.codex.guardian.ui.Shield;
 import com.codex.guardian.ui.Theme;
 import com.google.gson.Gson;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.inject.Provides;
 import java.awt.Toolkit;
@@ -95,8 +97,8 @@ import net.runelite.client.util.Filepath;
 
 @PluginDescriptor(
 	name = "Codex Guardian",
-	description = "A companion for one-life accounts: risk warnings, supply checks, a run journal and death-risk stats",
-	tags = {"hardcore", "hcim", "safety", "risk", "warning", "journal", "death", "codex"}
+	description = "A companion for one-life accounts: danger warnings, food and escape checks, a run journal and death-risk stats",
+	tags = {"hardcore", "hcim", "hcgim", "hcw", "safety", "risk", "warning", "journal", "death", "codex"}
 )
 public class CodexGuardianPlugin extends Plugin
 {
@@ -109,6 +111,8 @@ public class CodexGuardianPlugin extends Plugin
 	private static final int SELF_HARM_TICKS = 2;
 	/** This account's own one-life choice, "true" or "false"; absent until the account has one. */
 	static final String ONE_LIFE_KEY = "oneLifeAccount";
+	/** Added to a key's name to keep aside a saved value that could not be read in full. */
+	static final String UNREADABLE = "Unreadable";
 	/** Codex Quartermaster's saved data, read only, for the kit you packed and what your bank holds. */
 	static final String QUARTERMASTER_GROUP = "codexquartermaster";
 	static final String QUARTERMASTER_KEY = "quarters";
@@ -1316,20 +1320,11 @@ public class CodexGuardianPlugin extends Plugin
 		{
 			return;
 		}
-		Journal loaded = null;
 		String json = configManager.getConfiguration(CodexGuardianConfig.GROUP, profile, JOURNAL_KEY);
-		if (json != null && !json.isEmpty())
-		{
-			try
-			{
-				loaded = gson.fromJson(json, Journal.class);
-			}
-			catch (RuntimeException e)
-			{
-				loaded = null;
-			}
-		}
-		journal = loaded == null ? Journal.fresh(System.currentTimeMillis()) : loaded.repair();
+		SavedJson.Read<Journal> read = Journal.load(gson, json);
+		keepAside(profile, JOURNAL_KEY, json, read.isDamaged());
+		Journal loaded = read.getValue();
+		journal = loaded == null ? Journal.fresh(System.currentTimeMillis()) : loaded;
 		journalProfile = profile;
 		hits = loadHits(profile);
 		hitsChanged = false;
@@ -1368,22 +1363,27 @@ public class CodexGuardianPlugin extends Plugin
 	private HitMemory loadHits(String profile)
 	{
 		String json = configManager.getConfiguration(CodexGuardianConfig.GROUP, profile, HITS_KEY);
-		if (json != null && !json.isEmpty())
+		SavedJson.Read<HitMemory> read = HitMemory.load(gson, json);
+		keepAside(profile, HITS_KEY, json, read.isDamaged());
+		return read.getValue();
+	}
+
+	/**
+	 * Keeps a saved value that could not be read in full under its own key with {@link #UNREADABLE} added, before
+	 * the next save writes over it, so a damaged or newer-version journal is never lost; a later damaged read
+	 * replaces it only with different text.
+	 */
+	private void keepAside(String profile, String key, String json, boolean damaged)
+	{
+		if (!damaged || json == null)
 		{
-			try
-			{
-				HitMemory loaded = gson.fromJson(json, HitMemory.class);
-				if (loaded != null)
-				{
-					return loaded.repair();
-				}
-			}
-			catch (RuntimeException e)
-			{
-				// A damaged record is not worth a crash; the memory starts again.
-			}
+			return;
 		}
-		return new HitMemory();
+		String aside = key + UNREADABLE;
+		if (!json.equals(configManager.getConfiguration(CodexGuardianConfig.GROUP, profile, aside)))
+		{
+			configManager.setConfiguration(CodexGuardianConfig.GROUP, profile, aside, json);
+		}
 	}
 
 	/** Called on the client thread when the player marks this account one-life, or not, in the panel. */
@@ -1430,7 +1430,11 @@ public class CodexGuardianPlugin extends Plugin
 			{
 				if (need.getItemId() >= 0)
 				{
-					kitItemNames.put(need.getItemId(), client.getItemDefinition(need.getItemId()).getName());
+					String name = itemName(need.getItemId());
+					if (name != null)
+					{
+						kitItemNames.put(need.getItemId(), name);
+					}
 				}
 			}
 		}
@@ -1513,6 +1517,20 @@ public class CodexGuardianPlugin extends Plugin
 		tripDirty = true;
 	}
 
+	/**
+	 * The client's name for an item id that came from another plugin's save, or null for an id the game does not
+	 * have: a damaged save must not reach past the item table on the client thread.
+	 */
+	private String itemName(int id)
+	{
+		if (id < 0 || id >= client.getItemCount())
+		{
+			return null;
+		}
+		ItemComposition def = client.getItemDefinition(id);
+		return def == null ? null : def.getName();
+	}
+
 	/** Another plugin's saved JSON object, or null when it is missing or not an object. */
 	private JsonObject readJson(String json)
 	{
@@ -1522,7 +1540,8 @@ public class CodexGuardianPlugin extends Plugin
 		}
 		try
 		{
-			return gson.fromJson(json, JsonObject.class);
+			JsonElement tree = SavedJson.tree(gson, json);
+			return tree != null && tree.isJsonObject() ? tree.getAsJsonObject() : null;
 		}
 		catch (RuntimeException e)
 		{
@@ -1571,7 +1590,7 @@ public class CodexGuardianPlugin extends Plugin
 		KitPlan plan = kitPlan;
 		Zone destination = TripCheck.destinationFor(plan == null ? null : plan.getName());
 		List<Supplies.Item> bank = SharedBank.byName(bankItems, id -> bankNames.computeIfAbsent(id,
-			i -> client.getItemDefinition(i).getName()));
+			this::itemName));
 		TripCheck next = TripCheck.build(destination, plan, kitItemNames, lastInventory, lastWorn, readiness, bankGraces, bank,
 			config.foodReserve()).withMemory(destination == null ? null
 				: PlaceMemory.lines(journal, hits, destination.getName()));

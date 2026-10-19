@@ -103,11 +103,13 @@ final class JournalView
 		JPanel holder = new JPanel(new BorderLayout(0, 4));
 		holder.setOpaque(false);
 		holder.add(new RunSeal(journal, oneLife, worth, now), BorderLayout.NORTH);
-		JPanel actions = new JPanel(new BorderLayout(6, 0));
+		// Sharing on one row and starting over on the next: "Save seal card", "Copy" and "Start a new run" are too wide
+		// for one row at sidebar width.
+		JPanel actions = new JPanel(new BorderLayout(0, 4));
 		actions.setOpaque(false);
 		if (share != null)
 		{
-			actions.add(share, BorderLayout.WEST);
+			actions.add(share, BorderLayout.NORTH);
 		}
 		JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
 		right.setOpaque(false);

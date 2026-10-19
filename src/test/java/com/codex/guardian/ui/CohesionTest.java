@@ -127,4 +127,101 @@ public class CohesionTest
 		assertTrue(top.toString(), top.contains("41%"));
 		assertTrue(wardBefore == panel.wardView());
 	}
+
+	private static Journal longRun()
+	{
+		Journal run = Journal.fresh(0);
+		for (int i = 0; i < 786_000; i++)
+		{
+			run.tick(false);
+		}
+		return run;
+	}
+
+	private static void buttons(Component c, List<CodexButton> out)
+	{
+		if (c instanceof CodexButton)
+		{
+			out.add((CodexButton) c);
+		}
+		if (c instanceof Container)
+		{
+			for (Component k : ((Container) c).getComponents())
+			{
+				buttons(k, out);
+			}
+		}
+	}
+
+	@Test
+	public void theJournalTabShowsTheRunsLengthOnlyOnTheSeal()
+	{
+		// The seal's face reads "131h played"; the crest above it said "This run 131h 0m" as well.
+		GuardianPanel panel = new GuardianPanel(80, () -> {}, v -> {});
+		panel.onActivate();
+		panel.update(praying(), Peril.calm());
+		panel.updateJournal(longRun());
+		panel.selectTab(1);
+		List<String> top = new ArrayList<>();
+		texts(panel, top);
+		assertFalse(top.toString(), top.contains("This run"));
+		assertFalse(top.toString(), top.contains("131h 0m"));
+		assertTrue(top.toString(), top.contains("Combat"));
+		// The Ward and Perils tabs have no seal, so the crest keeps the run there.
+		panel.selectTab(0);
+		top.clear();
+		texts(panel, top);
+		assertTrue(top.toString(), top.contains("This run"));
+		assertTrue(top.toString(), top.contains("131h 0m"));
+	}
+
+	@Test
+	public void theSealsButtonsNameTheCardAsTheOtherPluginsDoAndFit()
+	{
+		GuardianPanel panel = new GuardianPanel(80, () -> {}, v -> {});
+		panel.setShare(new ShareActions()
+		{
+			public void save(BufferedImage card, String file)
+			{
+			}
+
+			public void copy(BufferedImage card)
+			{
+			}
+		}, () -> true);
+		panel.onActivate();
+		panel.update(praying(), Peril.calm());
+		panel.updateJournal(longRun());
+		panel.setSize(225, 900);
+		panel.selectTab(1);
+		Component page = panel.journalPage();
+		page.setSize(209, 2000);
+		layoutAll(page);
+		List<CodexButton> found = new ArrayList<>();
+		buttons(page, found);
+		List<String> labels = new ArrayList<>();
+		for (CodexButton b : found)
+		{
+			labels.add(b.getText());
+			// Every button sits whole inside the page, none cut at the sidebar's edge.
+			java.awt.Point at = javax.swing.SwingUtilities.convertPoint(b.getParent(), b.getLocation(), page);
+			assertTrue(b.getText() + " at " + at.x, at.x >= 0 && at.x + b.getWidth() <= 209);
+			assertEquals(b.getText(), b.getPreferredSize().width, b.getWidth());
+		}
+		assertTrue(labels.toString(), labels.contains("Save seal card"));
+		assertTrue(labels.toString(), labels.contains("Copy"));
+		assertTrue(labels.toString(), labels.contains("Start a new run"));
+	}
+
+	private static void layoutAll(Component c)
+	{
+		c.doLayout();
+		if (c instanceof Container)
+		{
+			for (Component k : ((Container) c).getComponents())
+			{
+				layoutAll(k);
+			}
+		}
+	}
 }

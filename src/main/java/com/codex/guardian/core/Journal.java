@@ -106,6 +106,8 @@ public final class Journal
 	}
 
 	static final int MAX_ENTRIES = 250;
+	/** A hundred years of play in game ticks: more than this is damage, not a run. */
+	static final long MAX_TICKS = 100L * 365 * 24 * 6000;
 	/** Replays are kept on this many of the newest entries that have one, so the save stays small (about 300 bytes each). */
 	static final int MAX_REPLAYS = 30;
 	/** Re-entering the same zone within this long does not write a new entry. */
@@ -135,9 +137,36 @@ public final class Journal
 	Map<String, Integer> lowestByPlace = new LinkedHashMap<>();
 	List<Entry> entries = new ArrayList<>();
 
-	/** Gson leaves fields it did not find as null; this puts them back. */
+	/**
+	 * Reads a saved journal, keeping every field and entry that reads on its own: one odd value never costs the run.
+	 * Null with nothing saved, or with nothing in it readable; the result says when anything was left out.
+	 */
+	public static SavedJson.Read<Journal> load(com.google.gson.Gson gson, String json)
+	{
+		SavedJson.Read<Journal> read = SavedJson.read(gson, json, Journal.class);
+		return new SavedJson.Read<>(read.getValue() == null ? null : read.getValue().repair(), read.isDamaged());
+	}
+
+	/**
+	 * Gson leaves fields it did not find as null; this puts them back, and brings figures no run could reach
+	 * (negative counts, centuries of play) back to sense.
+	 */
 	public Journal repair()
 	{
+		playedTicks = Math.max(0, Math.min(MAX_TICKS, playedTicks));
+		dangerTicks = Math.max(0, Math.min(playedTicks, dangerTicks));
+		closeCalls = Math.max(0, closeCalls);
+		deaths = Math.max(0, deaths);
+		safeDeaths = Math.max(0, safeDeaths);
+		unconfirmedDeaths = Math.max(0, unconfirmedDeaths);
+		disconnects = Math.max(0, disconnects);
+		lagSpikes = Math.max(0, lagSpikes);
+		lowestHitpoints = Math.max(-1, lowestHitpoints);
+		runStartedAt = Math.max(0, runStartedAt);
+		if (biggestHit != null && biggestHit.amount <= 0)
+		{
+			biggestHit = null;
+		}
 		if (damageBySource == null)
 		{
 			damageBySource = new LinkedHashMap<>();
@@ -154,7 +183,8 @@ public final class Journal
 		{
 			lowestByPlace = new LinkedHashMap<>();
 		}
-		lowestByPlace.values().removeIf(v -> v == null);
+		lowestByPlace.values().removeIf(v -> v == null || v < 0);
+		damageBySource.entrySet().removeIf(e -> e.getKey() == null || e.getValue() == null || e.getValue() <= 0);
 		entries.removeIf(e -> e == null || e.type == null);
 		for (Entry e : entries)
 		{
@@ -167,12 +197,13 @@ public final class Journal
 		Map<String, Integer> places = new LinkedHashMap<>();
 		closeCallsByPlace.forEach((place, count) ->
 		{
-			if (place != null && count != null)
+			if (place != null && count != null && count > 0)
 			{
 				places.merge(area(place), count, Integer::sum);
 			}
 		});
 		closeCallsByPlace = places;
+		trim();
 		return this;
 	}
 
@@ -435,6 +466,16 @@ public final class Journal
 		Entry entry = new Entry(at, type, title, detail);
 		entry.replay = replay != null && replay.isValid() ? replay : null;
 		entries.add(entry);
+		trim();
+	}
+
+	/**
+	 * Keeps replays on only the newest {@link #MAX_REPLAYS} entries (deaths keep theirs), and at most
+	 * {@link #MAX_ENTRIES} entries: the first entry, deaths and status changes stay, and the oldest of the rest go.
+	 * One pass, so a damaged journal of thousands of entries is trimmed at once.
+	 */
+	private void trim()
+	{
 		int kept = 0;
 		for (int i = entries.size() - 1; i >= 0; i--)
 		{
@@ -445,21 +486,29 @@ public final class Journal
 				e.replay = null;
 			}
 		}
-		while (entries.size() > MAX_ENTRIES)
+		int excess = entries.size() - MAX_ENTRIES;
+		if (excess <= 0)
 		{
-			// Keep the first entry, deaths and status changes; drop the oldest of the rest.
-			int drop = -1;
-			for (int i = 1; i < entries.size(); i++)
-			{
-				Type t = entries.get(i).type;
-				if (t != Type.DEATH && t != Type.STATUS_LOST && t != Type.UNCONFIRMED_DEATH)
-				{
-					drop = i;
-					break;
-				}
-			}
-			entries.remove(drop < 0 ? 0 : drop);
+			return;
 		}
+		List<Entry> out = new ArrayList<>(MAX_ENTRIES + 1);
+		for (int i = 0; i < entries.size(); i++)
+		{
+			Type t = entries.get(i).type;
+			boolean keep = i == 0 || t == Type.DEATH || t == Type.STATUS_LOST || t == Type.UNCONFIRMED_DEATH;
+			if (!keep && excess > 0)
+			{
+				excess--;
+				continue;
+			}
+			out.add(entries.get(i));
+		}
+		// Only when deaths and status changes alone are too many: the oldest go.
+		while (out.size() > MAX_ENTRIES)
+		{
+			out.remove(0);
+		}
+		entries = out;
 	}
 
 	public long getRunStartedAt()

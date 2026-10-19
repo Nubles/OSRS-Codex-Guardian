@@ -93,7 +93,13 @@ public class GuardianPanel extends PluginPanel
 		content.add(perils, TABS[2]);
 		add(content, BorderLayout.CENTER);
 
-		tabs.onChange(tab -> cards.show(content, TABS[tab]));
+		tabs.onChange(tab ->
+		{
+			cards.show(content, TABS[tab]);
+			// The Journal's seal shows the run's length, so the crest does not repeat it there.
+			crest.showRun(tab != 1);
+			crest.update(situation, peril, journal);
+		});
 		rebuildWard();
 		rebuildJournal();
 	}
@@ -141,6 +147,18 @@ public class GuardianPanel extends PluginPanel
 	{
 		this.situation = situation;
 		crest.update(situation, peril, journal);
+	}
+
+	/** Shows a tab as a click on it would: 0 Ward, 1 Journal, 2 Perils. */
+	void selectTab(int tab)
+	{
+		tabs.setSelected(tab, true);
+	}
+
+	/** The Journal page as it is now built, for tests. */
+	java.awt.Component journalPage()
+	{
+		return journalView.getViewport().getView();
 	}
 
 	/** The Ward page as it is now built, for tests that check it was not rebuilt. */
@@ -283,8 +301,8 @@ public class GuardianPanel extends PluginPanel
 		}
 		JPanel buttons = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 0, 0));
 		buttons.setOpaque(false);
-		// Short labels, so both fit beside "Start a new run"; the tooltips say what they make.
-		CodexButton save = new CodexButton("Save", false, () -> shareSeal(true));
+		// Named as the other Codex plugins name theirs; on a row of their own, above "Start a new run".
+		CodexButton save = new CodexButton("Save seal card", false, () -> shareSeal(true));
 		save.setToolTipText("Save the run's seal as a picture to share");
 		CodexButton copy = new CodexButton("Copy", false, () -> shareSeal(false));
 		copy.setToolTipText("Copy the run's seal as a picture, ready to paste");

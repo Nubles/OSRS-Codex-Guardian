@@ -87,7 +87,7 @@ public final class Replay
 	public boolean isValid()
 	{
 		int n = ticks();
-		return n >= 2 && max > 0 && hit != null && hit.length == n && ate != null && ate.length == n
+		return n >= 2 && n <= MAX_TICKS && max > 0 && hit != null && hit.length == n && ate != null && ate.length == n
 			&& drank != null && drank.length == n;
 	}
 

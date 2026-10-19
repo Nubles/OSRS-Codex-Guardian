@@ -21,6 +21,8 @@ public final class HitMemory
 {
 	/** The most monsters remembered; past this the least threatening are forgotten first. */
 	static final int MAX_RECORDS = 300;
+	/** No single hit in the game comes near this; a bigger saved one is damage, not something to warn about. */
+	static final int MAX_HIT = 1_000;
 
 	/** What one kind of monster has done to you. */
 	public static final class Record
@@ -69,13 +71,38 @@ public final class HitMemory
 	Map<String, Record> records = new LinkedHashMap<>();
 
 	/** Gson leaves fields it did not find as null, and an edited file may hold nonsense; this puts both right. */
+	/**
+	 * Reads a saved hit memory, keeping every record that reads on its own; an empty memory when nothing can be read.
+	 * The result says when anything was left out.
+	 */
+	public static SavedJson.Read<HitMemory> load(com.google.gson.Gson gson, String json)
+	{
+		SavedJson.Read<HitMemory> read = SavedJson.read(gson, json, HitMemory.class);
+		HitMemory memory = read.getValue() == null ? new HitMemory() : read.getValue();
+		return new SavedJson.Read<>(memory.repair(), read.isDamaged());
+	}
+
 	public HitMemory repair()
 	{
 		if (records == null)
 		{
 			records = new LinkedHashMap<>();
 		}
-		records.values().removeIf(r -> r == null || r.name == null || r.max <= 0);
+		records.values().removeIf(r -> r == null || r.name == null || r.max <= 0 || r.max > MAX_HIT);
+		records.keySet().removeIf(k -> k == null);
+		if (records.size() > MAX_RECORDS)
+		{
+			// The hardest hitters are the ones worth remembering.
+			List<Map.Entry<String, Record>> list = new ArrayList<>(records.entrySet());
+			list.sort((a, b) -> b.getValue().max != a.getValue().max ? Integer.compare(b.getValue().max, a.getValue().max)
+				: Long.compare(b.getValue().at, a.getValue().at));
+			Map<String, Record> kept = new LinkedHashMap<>();
+			for (Map.Entry<String, Record> e : list.subList(0, MAX_RECORDS))
+			{
+				kept.put(e.getKey(), e.getValue());
+			}
+			records = kept;
+		}
 		return this;
 	}
 

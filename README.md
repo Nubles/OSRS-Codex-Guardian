@@ -1,37 +1,36 @@
 # Codex Guardian
 
-**A companion for accounts with one life.** Codex Guardian watches over a Hardcore Ironman, a Hardcore Group Ironman or any account you mark as one-life (Hardcore Worlds included). It reads your hitpoints, the place you stand in and what you carry, tells you plainly how much danger you are in and why, and keeps a journal of the run: every close call survived, every milestone, and what hurts you most.
+**A companion for accounts with one life.** Codex Guardian watches over a Hardcore Ironman, a Hardcore Group Ironman, any account on a Hardcore World, or any account you mark as one-life. It tells you plainly how much danger you are in and what to do about it, checks your food and way out before you go, and keeps a journal of the run: every close call survived, every milestone, and what hurts you most.
 
-It is the second plugin in the **Codex** suite, after [Codex Navigator](https://github.com/Nubles/OSRS-Codex-Navigator), and shares its look: warm ink, aged gold and the game's own fonts.
+Part of the **Codex** suite of RuneLite plugins, which share one look: warm ink, aged gold and the game's own fonts.
 
 <p align="center">
-  <img src="docs/screenshots/1-ward-danger.png" width="225" alt="Ward in danger">
-  <img src="docs/screenshots/3-journal.png" width="225" alt="Run journal">
-  <img src="docs/screenshots/4-perils.png" width="225" alt="Perils">
+  <img src="docs/screenshots/1-ward-danger.png" width="225" alt="The Ward in peril in the Wilderness">
+  <img src="docs/screenshots/3-journal.png" width="225" alt="The Journal and the run's seal">
+  <img src="docs/screenshots/4-perils.png" width="225" alt="Perils: what has hurt you most">
 </p>
 
-## What it does
+## The panel
 
-- **Ward.** A dial from Calm to Peril with the single reason that matters most and, in danger, the one thing to do now: teleport out with the item you carry, eat, walk south to a level your teleport works at, or run. Below it: who is attacking you, where you are and how risky it is, and one ledger of your readiness (food, a way out, a last resort, prayer restores, cures). The crest at the top keeps your hitpoints, prayer, run energy and the length of the run in view on every tab.
-- **Before you go.** Somewhere quiet, the Ward checks the trip ahead: food against what you plan to take, a way out, the protection your destination is known for (dragonfire, venom, a wyvern's breath, smoke, a burning floor, cave horrors) and a last resort. No ring of life on, but two in the bank? It says so. With [Codex Bank Steward](https://github.com/Nubles/OSRS-Codex-Bank-Steward) installed, Guardian also knows your whole bank before you open it this session: a forgotten teleport, anti-venom or kit item is named with what is waiting in the bank ("No teleport: Glory(4) in the bank"), and lines you can fix at a bank are marked so. Walk away from a bank and the plaque runs the same check once, worst problems first.
-- **Codex Quartermaster aware.** With [Codex Quartermaster](https://github.com/Nubles/OSRS-Codex-Quartermaster) installed, the check follows the kit you chose there: its destination, its food, and the survival supplies it packs (prayer, anti-venom, antifire, brews, teleport tabs). It reads the kit list Quartermaster publishes for other plugins (`kitsV1`), with its older record as a fallback and for the bank; a kit only counts once you have chosen it, so a fresh Quartermaster install is not taken for a Vorkath trip. Without it, Guardian checks with its own sense.
-- **Entry briefings.** Walk into a boss lair, a raid, a dangerous dungeon or the Wilderness and the in-game plaque checks your food, your teleport and your ring of life before the first hit lands. Safe minigames say so.
-- **Wilderness sense.** A briefing a few steps before the ditch, and teleports judged by level: most stop at 20, a glory and a few others at 30, nothing above. Walk past your best teleport's reach and the plaque says so at once, with a notification, and counts the tiles back south to where it works again (or to the ditch, when nothing will, or when you are teleblocked). Underground, where the way out is a cave mouth rather than south, only the walk back to your teleport's level is counted. The level is read from the game's own Wilderness text, underground included.
-- **Peril.** Guardian calls peril whenever a death could come in the next few ticks: hitpoints critical under fire, one more hit like your worst recent one would kill you (two attackers landing together count as one hit), or your hitpoints run out within about twelve seconds at the current pace. The plaque beats with what to do, the screen edge glows red and you get a notification. A ring of life is noted but never talks the read down: one hit from above its threshold skips it.
-- **Journal.** The story of the run, newest first: close calls survived with how low you went, risky places entered, milestones, disconnects in danger, a death or the loss of hardcore status (even one that happened on another client, noticed at the next login). A death in a safe minigame is recorded as safe and does not end the run.
-- **The run's seal.** The Journal opens on a drawn seal, the card worth a screenshot: a metal earned by hours played on one life (bronze, iron at 5 h, steel 15, black 30, mithril 60, adamant 120, rune 250, dragon 500), its tier on a ribbon, the day the run began, the close calls survived, the closest of them, and, with [Codex Ledger](https://github.com/Nubles/OSRS-Codex-Ledger) installed, the account's worth (Ledger's saved figure, read only). A bar shows the road to the next seal. A fallen run keeps the seal it reached, cracked.
-- **Seal card.** Save (or Copy) under the seal makes a picture of it to share: your name and how the account is played, then the seal as the journal draws it. Turn off "Name on cards" in the settings to share it without your name. The account's worth stays off the card (the seal there shows the biggest hit instead) unless you turn on "Worth on cards"; the seal in the panel shows it either way.
-- **Perils.** Close calls, the lowest you have been, the biggest hit taken, time spent in danger, and a ranking of what has dealt you the most damage and where it got close.
-- **Hit memory.** Guardian remembers the hardest each kind of monster has hit you, told apart by name and level, and learns only from hits taken while that monster was the one thing attacking you. The next time one is on you, the Ward shows "Hits 31" beside it and calls peril if your hitpoints are at or below that figure, before the first hit of the fight lands. In multi-combat two remembered hitters count together, since both can land on one tick. The Perils tab lists your hardest hitters. The figure is the most you have taken, with your prayer and armour at the time, so the monster may hit harder.
-- **Lag watch.** Guardian times the game's ticks. When they start arriving late, or the game freezes for seconds, while something can hurt you, the Ward shows a Connection row, peril weighs it, the advice becomes "Lagging: teleport out", and you get a notification, at most once a minute (turn it off with "Notify lag in danger"). Region loads, logins and world hops are not counted as lag, and neither are the first few heavy ticks after a login or hop while the game catches up. The journal records each spike.
-- **Replays.** Every close call and death in the journal carries a replay of its last seconds, tick by tick: your hitpoints as a line that turns red where they ran low, each hit as a bar, a bead for every bite of food (teal) and potion sip (gold), and a ring at the lowest point. Under it, the story in a line: "Took 78 in 2s · ate 2 · drank 1", with the biggest hit and who dealt it in the tooltip. Recorded only from what the client showed you.
-- **Prayer watch.** In a fight, Guardian times how fast your prayer is falling and shows how long it lasts on the Ward ("25s left"; the crest above has the points themselves). Under fire with less than half a minute left, the peril read says so, and with under fifteen seconds the advice becomes "Prayer almost out: teleport" (or "back off" with no teleport). The estimate is rounded down, so it never promises more prayer than you have; a restore starts a fresh measurement.
-- **Out of run energy.** In the Wilderness with no teleport that works, running out is the plan, and it is only a plan with energy to run on. Under 10% run energy while something is on you, the Ward says so, and if you carry a stamina, energy or super energy potion the advice becomes "Sip energy, run south now" on the surface, or "Sip energy, run for the exit" underground and in boss lairs, where south is no way out.
-- **Places remember.** Walk back into somewhere you nearly died and the entry briefing, the Ward's place card and the trip check say so: "2 close calls here, 6 hp low", and the hardest hit you took there.
+- **Ward.** A dial from Calm to Peril with the one reason that matters most and, in danger, the one thing to do now: teleport out with the item you carry, eat, walk south to a level your teleport works at, or run. Below it: who is attacking you, where you are and how risky it is, and your readiness (food, a way out, a last resort, prayer restores, cures). The crest at the top shows your hitpoints, prayer, run energy and how long the run has lasted.
+- **Before you go.** Somewhere quiet, the Ward checks the trip ahead: food against what you plan to take, a way out, the protection your destination calls for (dragonfire, venom, a wyvern's breath and so on) and a last resort. No ring of life on, but two in the bank? It says so.
+- **Journal.** The story of the run, newest first: close calls with how low you went, risky places entered, milestones, disconnects and lag in danger, a death or the loss of hardcore status (even one on another client, noticed at your next login). A death in a safe minigame is journaled as safe and does not end the run. Each close call and death has a replay of its last seconds: your hitpoints tick by tick, each hit, each bite of food and potion sip.
+- **The run's seal.** The Journal opens on a seal earned by hours played on one life: bronze, iron at 5 h, steel 15, black 30, mithril 60, adamant 120, rune 250, dragon 500. It shows the day the run began, close calls survived, the closest of them, and your worth (with Codex Ledger). A fallen run keeps its seal, cracked.
+- **Seal card.** **Save seal card** or **Copy** under the seal makes a picture of it to share.
+- **Perils.** Close calls, your lowest hitpoints, the biggest hit taken, time spent in danger, what has dealt you the most damage and where it got close, and the monsters that have hit you hardest.
 
 <p align="center">
+  <img src="docs/screenshots/2-ward-hardcore-world.png" width="225" alt="The Ward on a Hardcore World in the Fight Caves">
   <img src="docs/screenshots/8-before-you-go.png" width="225" alt="Before you go">
 </p>
+
+## In the game
+
+- **Plaque.** A small plaque with your hitpoints, food and way out, shown when you choose (always, or from Wary or Danger up).
+- **Entry briefings.** Walk into a boss lair, a raid, a dangerous dungeon or the Wilderness and the plaque checks your food, teleport and ring of life before the first hit lands. Walk back into somewhere you nearly died and it says so: "2 close calls here, 6 hp low".
+- **Wilderness sense.** Teleports are judged by level (most stop at 20, a glory and a few others at 30). Walk past your best teleport's reach and the plaque says so, with a notification, and counts the tiles back south to where it works again.
+- **Peril.** When a death could come in the next few ticks (hitpoints critical under fire, one more hit like the worst you have taken from this monster would kill you, or your hitpoints run out within about twelve seconds at this pace) the plaque says what to do, the screen edge glows red and you get a notification.
+- **Prayer and lag watch.** In a fight Guardian times how fast your prayer is falling and warns before it runs out, and it notices when game ticks arrive late while something can hurt you.
 
 <p align="center">
   <img src="docs/screenshots/5-briefing.png" width="200" alt="Entry briefing">
@@ -43,13 +42,36 @@ It is the second plugin in the **Codex** suite, after [Codex Navigator](https://
   <img src="docs/screenshots/9-seal-card.png" width="260" alt="Seal card">
 </p>
 
-## Rules posture
+## Settings that matter
 
-Guardian only reads what the client already shows you: your stats, your inventory and worn items, your position and who is attacking you. It warns about situations in general (low hitpoints, a dangerous place, no food, no way out) and never about what a particular boss is about to do. It does not click, change menus, send chat or touch the network. The journal is saved per account in your RuneLite profile and never leaves your computer. It reads Codex Ledger's saved worth (`codexledger/ledger`, only `total` and `since`), Codex Quartermaster's saved kit and bank record and Codex Bank Steward's bank snapshot (`bankV1`), if present, but never changes them.
+| Setting | Default | What it does |
+| --- | --- | --- |
+| Show plaque | Wary or worse | When the in-game plaque is shown. |
+| Entry briefings | On | Checks food, way out and saving grace as you walk into a dangerous place. |
+| Peril glow | On | The red glow at the edge of the game view while you are in peril. |
+| Notify in peril, on low hitpoints, past teleport range, lag in danger | On | Notifications for each. "Notify on dangerous places" is off by default. |
+| Food for danger | 80 | How many hitpoints of food Guardian wants you carrying into danger. |
+| Close call at | 20% | How low your hitpoints must fall, and you survive, for a close call. |
+| Name on cards | On | Your character's name on the seal card. |
+| Worth on cards | Off | Your worth from Codex Ledger on the seal card; the seal in the panel shows it either way. |
 
-## Hardcore Worlds
+## Hardcore Worlds and one-life accounts
 
-Hardcore Ironmen are recognised automatically, and so is any account on a Hardcore World: Guardian reads the world's own type, so the journal treats a death there as the end of the run without you marking anything. Until their rules can be checked, Guardian does not take any minigame as safe on a Hardcore World: Fight Caves, the Inferno, the Colosseum, the Gauntlet, Pest Control, NMZ and the rest read as a risk there and the place card says why. A death in one of them is journaled as an "Unconfirmed death": the seal stays whole, and if the game did end your run, **Mark as fallen** under that entry records it. A wrong "safe" would cost a run; a wrong "risky" costs nothing. Blighted food and potions only count inside the Wilderness, where they can be used. For any other one-life account, press **Mark one-life** in the panel's Journal tab so the journal treats a death as the end of the run. The choice belongs to that account alone, so a main and a one-life account on the same RuneLite profile each keep their own. If you used the old global "One-life account" setting, every account that already had a journal keeps it; an account Guardian first meets now starts as an ordinary account and keeps its own choice from then on.
+Hardcore Ironmen and any account on a Hardcore World are recognised by themselves. Until their rules can be checked, Guardian does not take any minigame as safe on a Hardcore World: Fight Caves, the Inferno, the Colosseum, the Gauntlet, Pest Control and the rest read as a risk there. A death in one is journaled as an "Unconfirmed death"; if the game did end your run, **Mark as fallen** under that entry records it. For any other one-life account, press **Mark one-life** in the Journal tab. The choice belongs to that account alone.
+
+## With other Codex plugins
+
+Guardian works on its own. With these installed it knows more, and only ever reads what they save:
+
+- **[Codex Quartermaster](https://github.com/Nubles/OSRS-Codex-Quartermaster):** the kit you chose there sets the trip check's destination, food and supplies. A kit counts only once you have chosen it.
+- **[Codex Bank Steward](https://github.com/Nubles/OSRS-Codex-Bank-Steward):** your whole bank before you open it this session, so a forgotten teleport or anti-venom is named with what is waiting in the bank.
+- **[Codex Ledger](https://github.com/Nubles/OSRS-Codex-Ledger):** your account's worth, for the seal.
+
+[Codex Navigator](https://github.com/Nubles/OSRS-Codex-Navigator) reads the one-life choice you make here, to suggest safer quests first.
+
+## Privacy and rules
+
+Guardian only reads what the client already shows you: your stats, inventory and worn items, your position and who is attacking you. It warns about situations in general and never about what a particular boss is about to do. It does not click, change menus, send chat or touch the network. The journal and hit memory are saved per account in your RuneLite profile and never leave your computer. If a saved journal is ever damaged, Guardian keeps every part it can read, and keeps the saved text aside (as `journalUnreadable`) rather than writing over it.
 
 ## Development
 

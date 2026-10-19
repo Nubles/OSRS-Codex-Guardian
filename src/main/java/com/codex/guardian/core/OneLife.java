@@ -49,9 +49,11 @@ public final class OneLife
 	 */
 	public static Decision resolve(String saved, boolean legacyGlobal, boolean hadJournal)
 	{
-		if ("true".equals(saved) || "false".equals(saved))
+		String choice = saved == null ? "" : saved.trim();
+		if ("true".equalsIgnoreCase(choice) || "false".equalsIgnoreCase(choice))
 		{
-			return new Decision(Boolean.parseBoolean(saved), false);
+			// Saved back when it was not written as Guardian writes it, so other Codex plugins read it too.
+			return new Decision(Boolean.parseBoolean(choice), !choice.equals(saved) || !choice.equals(choice.toLowerCase()));
 		}
 		return new Decision(legacyGlobal && hadJournal, true);
 	}

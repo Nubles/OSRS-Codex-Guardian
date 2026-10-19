@@ -54,6 +54,13 @@ public interface CodexGuardianConfig extends Config
 	)
 	String run = "run";
 
+	@ConfigSection(
+		name = "Cards",
+		description = "What goes on the seal card you save or copy",
+		position = 3
+	)
+	String cards = "cards";
+
 	@ConfigItem(
 		keyName = "plaqueMode",
 		name = "Show plaque",
@@ -81,7 +88,7 @@ public interface CodexGuardianConfig extends Config
 	@ConfigItem(
 		keyName = "perilVignette",
 		name = "Peril glow",
-		description = "Pulses the edges of the game view red while Guardian reads peril",
+		description = "Pulses the edges of the game view red while you are in peril",
 		position = 3,
 		section = inGame
 	)
@@ -212,8 +219,8 @@ public interface CodexGuardianConfig extends Config
 		keyName = "nameOnCard",
 		name = "Name on cards",
 		description = "Write your character's name on the seal card; turn off to share it without it",
-		position = 4,
-		section = run
+		position = 1,
+		section = cards
 	)
 	default boolean nameOnCard()
 	{
@@ -224,8 +231,8 @@ public interface CodexGuardianConfig extends Config
 		keyName = "worthOnCard",
 		name = "Worth on cards",
 		description = "Write your account's worth from Codex Ledger on the seal card; the seal in the panel shows it either way",
-		position = 5,
-		section = run
+		position = 2,
+		section = cards
 	)
 	default boolean worthOnCard()
 	{

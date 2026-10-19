@@ -35,7 +35,7 @@ public final class SharedBank
 		}
 		try
 		{
-			JsonElement root = gson.fromJson(json, JsonElement.class);
+			JsonElement root = SavedJson.tree(gson, json);
 			if (root == null || !root.isJsonObject())
 			{
 				return null;
@@ -58,7 +58,7 @@ public final class SharedBank
 				try
 				{
 					int id = Integer.parseInt(e.getKey());
-					long qty = e.getValue().getAsLong();
+					long qty = SavedJson.number(e.getValue());
 					if (id > 0 && qty > 0)
 					{
 						out.merge(id, qty, Long::sum);
@@ -112,7 +112,9 @@ public final class SharedBank
 			long count = 0;
 			for (int id : ids[i])
 			{
-				count += bank.getOrDefault(id, 0L);
+				// Added without wrapping round: a damaged count at the top of a long must not turn negative.
+				long more = bank.getOrDefault(id, 0L);
+				count = count > Long.MAX_VALUE - more ? Long.MAX_VALUE : count + more;
 			}
 			if (count > 0)
 			{

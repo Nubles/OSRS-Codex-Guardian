@@ -55,6 +55,9 @@ public final class KitPlan
 	}
 
 	/** Quartermaster's built-in kits are not saved in its data, only chosen by id; their names are these. */
+	/** More of one supply than this on one trip is damage, not a plan. */
+	static final int MAX_PER_TRIP = 5_000;
+
 	private static final Map<String, String> PRESETS = new HashMap<>();
 
 	static
@@ -178,11 +181,16 @@ public final class KitPlan
 			{
 				try
 				{
-					bank.put(Integer.parseInt(e.getKey()), e.getValue().getAsLong());
+					int id = Integer.parseInt(e.getKey());
+					long count = SavedJson.number(e.getValue());
+					if (id >= 0 && count > 0)
+					{
+						bank.put(id, count);
+					}
 				}
-				catch (RuntimeException ignored)
+				catch (NumberFormatException ignored)
 				{
-					// A key or count of an unexpected shape is skipped, not fatal.
+					// A key of an unexpected shape is skipped, not fatal.
 				}
 			}
 		}
@@ -233,15 +241,9 @@ public final class KitPlan
 		{
 			return null;
 		}
-		int perTrip;
-		try
-		{
-			perTrip = n.getAsJsonObject().has("perTrip") ? n.getAsJsonObject().get("perTrip").getAsInt() : 0;
-		}
-		catch (RuntimeException e)
-		{
-			perTrip = 0;
-		}
+		// A count no trip could need, or below none, is damage: the need stays but sets no target.
+		long count = SavedJson.number(n.getAsJsonObject().get("perTrip"));
+		int perTrip = count >= 0 && count <= MAX_PER_TRIP ? (int) count : 0;
 		int itemId = -1;
 		if (supply.startsWith("item:"))
 		{
@@ -250,6 +252,10 @@ public final class KitPlan
 				itemId = Integer.parseInt(supply.substring("item:".length()));
 			}
 			catch (NumberFormatException e)
+			{
+				return null;
+			}
+			if (itemId < 0)
 			{
 				return null;
 			}

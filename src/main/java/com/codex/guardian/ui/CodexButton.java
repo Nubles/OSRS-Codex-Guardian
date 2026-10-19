@@ -101,4 +101,9 @@ public class CodexButton extends JComponent
 		g.drawString(this.text, (w - fm.stringWidth(this.text)) / 2, (h + fm.getAscent()) / 2 - 2 + dy);
 		g.dispose();
 	}
+
+	public String getText()
+	{
+		return text;
+	}
 }
