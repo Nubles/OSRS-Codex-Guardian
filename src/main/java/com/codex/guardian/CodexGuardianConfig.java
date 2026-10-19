@@ -152,12 +152,17 @@ public interface CodexGuardianConfig extends Config
 		return true;
 	}
 
+	/**
+	 * The old setting shared by every account. One-life is now chosen per account in the panel's Journal tab;
+	 * this stays, hidden, so accounts played under it carry it over once. See {@code OneLife}.
+	 */
 	@ConfigItem(
 		keyName = "oneLife",
 		name = "One-life account",
-		description = "Treat this account as having one life even if it is not a hardcore ironman, for example on Hardcore Worlds",
+		description = "Replaced by the per-account choice in the Guardian panel's Journal tab",
 		position = 1,
-		section = run
+		section = run,
+		hidden = true
 	)
 	default boolean oneLife()
 	{

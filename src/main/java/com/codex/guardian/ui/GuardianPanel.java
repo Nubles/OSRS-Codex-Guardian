@@ -3,6 +3,8 @@ package com.codex.guardian.ui;
 import com.codex.guardian.core.Journal;
 import com.codex.guardian.core.Peril;
 import com.codex.guardian.core.Situation;
+import com.codex.guardian.core.TripCheck;
+import java.util.function.Consumer;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
 import java.awt.Dimension;
@@ -34,22 +36,28 @@ public class GuardianPanel extends PluginPanel
 	private final JScrollPane perils = scroller();
 	private final PerilGauge gauge = new PerilGauge();
 	private final Runnable onNewRun;
+	private final Consumer<Boolean> onOneLife;
 	private final Timer confirmTimeout;
 
 	private Situation situation = Situation.loggedOut();
 	private Peril peril = Peril.calm();
 	private Journal journal;
+	private TripCheck trip;
 	private int foodReserve;
 	private boolean confirming;
 	private boolean active;
 	private boolean wardStale;
 
-	/** @param onNewRun called on the Swing thread once the player confirms a fresh run */
-	public GuardianPanel(int foodReserve, Runnable onNewRun)
+	/**
+	 * @param onNewRun  called on the Swing thread once the player confirms a fresh run
+	 * @param onOneLife called on the Swing thread when the player marks this account one-life (true) or not
+	 */
+	public GuardianPanel(int foodReserve, Runnable onNewRun, Consumer<Boolean> onOneLife)
 	{
 		super(false);
 		this.foodReserve = foodReserve;
 		this.onNewRun = onNewRun;
+		this.onOneLife = onOneLife;
 		this.confirmTimeout = new Timer(4000, e -> setConfirming(false));
 		confirmTimeout.setRepeats(false);
 
@@ -92,7 +100,13 @@ public class GuardianPanel extends PluginPanel
 	/** Called on the Swing thread whenever the live read changes. */
 	public void update(Situation situation, Peril peril)
 	{
+		boolean modeChanged = situation.isOneLife() != this.situation.isOneLife()
+			|| !java.util.Objects.equals(situation.getMode(), this.situation.getMode());
 		this.situation = situation;
+		if (modeChanged)
+		{
+			rebuildJournal();
+		}
 		this.peril = peril;
 		crest.update(situation, peril, journal);
 		// In a fight the read changes every tick; rebuilding a page nobody is looking at is wasted work.
@@ -130,6 +144,20 @@ public class GuardianPanel extends PluginPanel
 		rebuildJournal();
 	}
 
+	/** Called on the Swing thread with a fresh trip check whenever the pack, the kit or the bank changes. */
+	public void updateTrip(TripCheck trip)
+	{
+		this.trip = trip;
+		if (active || isShowing())
+		{
+			rebuildWard();
+		}
+		else
+		{
+			wardStale = true;
+		}
+	}
+
 	public void setFoodReserve(int foodReserve)
 	{
 		this.foodReserve = foodReserve;
@@ -139,13 +167,24 @@ public class GuardianPanel extends PluginPanel
 	private void rebuildWard()
 	{
 		wardStale = false;
-		replace(ward, WardView.build(situation, peril, gauge, foodReserve));
+		replace(ward, WardView.build(situation, peril, gauge, foodReserve, trip));
 	}
 
 	private void rebuildJournal()
 	{
-		replace(journalView, JournalView.build(journal, situation.isOneLife(), System.currentTimeMillis(), newRunButton()));
+		replace(journalView, JournalView.build(journal, situation, System.currentTimeMillis(), newRunButton(), oneLifeButton()));
 		replace(perils, PerilsView.build(journal));
+	}
+
+	/** The per-account one-life switch, or null for a hardcore account, which is one-life by its nature. */
+	private CodexButton oneLifeButton()
+	{
+		if (!situation.isLoggedIn() || situation.getMode() != null && situation.getMode().startsWith("Hardcore"))
+		{
+			return null;
+		}
+		boolean on = situation.isOneLife();
+		return new CodexButton(on ? "Not one-life" : "Mark one-life", false, () -> onOneLife.accept(!on));
 	}
 
 	private CodexButton newRunButton()

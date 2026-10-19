@@ -6,6 +6,7 @@ import com.codex.guardian.core.Readiness;
 import com.codex.guardian.core.Risk;
 import com.codex.guardian.core.Situation;
 import com.codex.guardian.core.Threat;
+import com.codex.guardian.core.TripCheck;
 import com.codex.guardian.core.Zone;
 import java.awt.BorderLayout;
 import java.awt.Color;
@@ -33,7 +34,7 @@ final class WardView
 	{
 	}
 
-	static StackPanel build(Situation s, Peril peril, PerilGauge gauge, int foodReserve)
+	static StackPanel build(Situation s, Peril peril, PerilGauge gauge, int foodReserve, TripCheck trip)
 	{
 		StackPanel stack = new StackPanel(6, 8);
 		if (!s.isLoggedIn())
@@ -52,11 +53,20 @@ final class WardView
 			stack.add(attackers(s));
 		}
 
+		// Somewhere quiet, the trip ahead matters more than the ground you stand on.
+		if (showTrip(s, trip))
+		{
+			String where = trip.getDestination() != null ? trip.getDestination() : trip.getKit();
+			stack.add(new SectionHeader("Before you go", where));
+			stack.add(trip(trip));
+		}
+
 		stack.add(new SectionHeader("Where you are"));
 		stack.add(place(s));
 
 		stack.add(new SectionHeader("Readiness"));
 		stack.add(readiness(s, foodReserve));
+
 
 		// Every reason except the ones the dial already says out loud.
 		String headline = peril.headline();
@@ -78,6 +88,46 @@ final class WardView
 			stack.add(Rows.ledger(rows));
 		}
 		return stack;
+	}
+
+	/**
+	 * The trip check shows while nothing is happening: no attackers, nowhere dangerous, not in the Wilderness,
+	 * and only when there is a trip to check (a Quartermaster kit) or a last resort sitting in the bank.
+	 */
+	static boolean showTrip(Situation s, TripCheck trip)
+	{
+		if (trip == null || s.inHarmsWay() || s.getWildernessLevel() > 0 || s.risk() == Risk.SAFE)
+		{
+			return false;
+		}
+		if (trip.getDestination() != null || trip.getKit() != null)
+		{
+			return true;
+		}
+		for (TripCheck.Line line : trip.getLines())
+		{
+			if (line.getText().endsWith("in the bank"))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static Card trip(TripCheck trip)
+	{
+		List<JComponent> rows = new ArrayList<>();
+		for (TripCheck.Line line : trip.getLines())
+		{
+			rows.add(Rows.sentence(Mark.of(line.getTone()), line.getText(), TEXT - 30));
+		}
+		if (trip.getKit() != null)
+		{
+			rows.add(Rows.sentence(Mark.Kind.NONE, "Checked against your Quartermaster kit, " + trip.getKit(), TEXT - 30));
+		}
+		Card card = Rows.ledger(rows);
+		card.accent(trip.isClear() ? Theme.TEAL : Theme.EMBER);
+		return card;
 	}
 
 	/** The place card and the readiness ledger already carry these, each with its own verdict mark. */
@@ -198,6 +248,25 @@ final class WardView
 		body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
 		pills.setAlignmentX(0f);
 		body.add(pills);
+		int toReach = s.getTilesToReach();
+		int toDitch = s.getTilesToDitch();
+		boolean reachHelps = toReach > 0 && !s.isTeleblocked();
+		if (reachHelps || toDitch > 0 && !s.canEscape())
+		{
+			// A teleblock stops every teleport, so the only distance that matters then is to the ditch.
+			String reachLine = reachHelps ? "Teleport works " + toReach + " tiles south" : null;
+			String ditchLine = toDitch > 0 && !s.canEscape() ? "Ditch " + toDitch + " tiles south" : null;
+			for (String line : new String[]{reachLine, ditchLine})
+			{
+				if (line != null)
+				{
+					JLabel l = Ui.label(line, Theme.small(), Theme.GOLD);
+					l.setBorder(new EmptyBorder(4, 0, 0, 0));
+					l.setAlignmentX(0f);
+					body.add(l);
+				}
+			}
+		}
 		String advice = zone != null ? zone.getAdvice()
 			: s.isNearWilderness() ? "The Wilderness starts a few steps north. Other players can attack you past the ditch."
 			: "Nothing here Guardian knows to be dangerous. Stay sharp all the same.";

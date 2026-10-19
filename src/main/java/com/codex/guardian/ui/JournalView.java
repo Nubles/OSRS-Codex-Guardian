@@ -1,6 +1,7 @@
 package com.codex.guardian.ui;
 
 import com.codex.guardian.core.Journal;
+import com.codex.guardian.core.Situation;
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
 import java.text.SimpleDateFormat;
@@ -21,8 +22,9 @@ final class JournalView
 	{
 	}
 
-	static StackPanel build(Journal journal, boolean oneLife, long now, CodexButton newRun)
+	static StackPanel build(Journal journal, Situation situation, long now, CodexButton newRun, CodexButton oneLifeToggle)
 	{
+		boolean oneLife = situation.isOneLife();
 		StackPanel stack = new StackPanel(6, 8);
 		if (journal == null)
 		{
@@ -30,6 +32,10 @@ final class JournalView
 			return stack;
 		}
 		stack.add(summary(journal, oneLife, newRun));
+		if (situation.isLoggedIn())
+		{
+			stack.add(mode(situation, oneLifeToggle));
+		}
 
 		List<Journal.Entry> entries = journal.getEntries();
 		stack.add(new SectionHeader("The story so far", String.valueOf(entries.size())));
@@ -62,6 +68,33 @@ final class JournalView
 		actions.setOpaque(false);
 		actions.add(newRun);
 		card.add(actions, BorderLayout.SOUTH);
+		return card;
+	}
+
+	/**
+	 * How Guardian treats this account: a hardcore account is one-life by its nature; any other account can be
+	 * marked one-life here, such as one on Hardcore Worlds. The choice belongs to this account alone.
+	 */
+	private static Card mode(Situation s, CodexButton toggle)
+	{
+		Card card = new Card(new BorderLayout(6, 4));
+		card.setBorder(new EmptyBorder(8, 10, 8, 10));
+		JPanel text = new JPanel();
+		text.setOpaque(false);
+		text.setLayout(new BoxLayout(text, BoxLayout.Y_AXIS));
+		boolean hardcore = toggle == null;
+		text.add(Ui.label(s.isOneLife() ? "ONE LIFE" : "ORDINARY ACCOUNT", Theme.small(), s.isOneLife() ? Theme.GOLD : Theme.TEXT_MUTED));
+		String line = hardcore ? "Recognised as " + s.getMode()
+			: s.isOneLife() ? "Marked one-life by you. A death ends the run." : "A death is journaled, not the end of the run.";
+		text.add(Ui.wrapped(line, Theme.small(), Theme.TEXT_MUTED, 190));
+		card.add(text, BorderLayout.CENTER);
+		if (toggle != null)
+		{
+			JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+			actions.setOpaque(false);
+			actions.add(toggle);
+			card.add(actions, BorderLayout.SOUTH);
+		}
 		return card;
 	}
 

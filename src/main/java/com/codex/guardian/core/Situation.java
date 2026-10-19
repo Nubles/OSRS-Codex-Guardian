@@ -38,6 +38,8 @@ public final class Situation
 	private final double damagePerTick;
 	private final int recentMaxHit;
 	private final Readiness readiness;
+	private final int tilesToReach;
+	private final int tilesToDitch;
 
 	private Situation(Builder b)
 	{
@@ -61,6 +63,8 @@ public final class Situation
 		damagePerTick = b.damagePerTick;
 		recentMaxHit = b.recentMaxHit;
 		readiness = b.readiness;
+		tilesToReach = b.tilesToReach;
+		tilesToDitch = b.tilesToDitch;
 	}
 
 	public static Situation loggedOut()
@@ -184,6 +188,21 @@ public final class Situation
 		return readiness;
 	}
 
+	/**
+	 * Tiles to walk due south until your best teleport works again, or -1 when that is unknown or does not
+	 * apply (no teleport, already within its reach, or a place off Guardian's Wilderness map).
+	 */
+	public int getTilesToReach()
+	{
+		return tilesToReach;
+	}
+
+	/** Tiles to walk due south to leave the Wilderness, or -1 outside it or off its map. */
+	public int getTilesToDitch()
+	{
+		return tilesToDitch;
+	}
+
 	public Risk risk()
 	{
 		return zone == null ? Risk.LOW : zone.getRisk();
@@ -206,7 +225,7 @@ public final class Situation
 		return loggedIn == s.loggedIn && oneLife == s.oneLife && world == s.world && combatLevel == s.combatLevel
 			&& hitpoints == s.hitpoints && maxHitpoints == s.maxHitpoints && prayer == s.prayer && maxPrayer == s.maxPrayer
 			&& wildernessLevel == s.wildernessLevel && nearWilderness == s.nearWilderness && multiCombat == s.multiCombat
-			&& teleblocked == s.teleblocked
+			&& teleblocked == s.teleblocked && tilesToReach == s.tilesToReach && tilesToDitch == s.tilesToDitch
 			&& Double.compare(damagePerTick, s.damagePerTick) == 0 && recentMaxHit == s.recentMaxHit
 			&& Objects.equals(playerName, s.playerName) && Objects.equals(mode, s.mode) && toxin == s.toxin
 			&& Objects.equals(zone, s.zone) && attackers.equals(s.attackers) && Objects.equals(readiness, s.readiness);
@@ -217,7 +236,7 @@ public final class Situation
 	{
 		return Objects.hash(loggedIn, playerName, mode, oneLife, world, combatLevel, hitpoints, maxHitpoints, prayer,
 			maxPrayer, toxin, zone, wildernessLevel, nearWilderness, multiCombat, teleblocked, attackers, damagePerTick, recentMaxHit,
-			readiness);
+			readiness, tilesToReach, tilesToDitch);
 	}
 
 	public static final class Builder
@@ -238,6 +257,8 @@ public final class Situation
 		private boolean nearWilderness;
 		private boolean multiCombat;
 		private boolean teleblocked;
+		private int tilesToReach = -1;
+		private int tilesToDitch = -1;
 		private final List<Threat> attackers = new ArrayList<>();
 		private double damagePerTick;
 		private int recentMaxHit;
@@ -329,6 +350,14 @@ public final class Situation
 		{
 			damagePerTick = perTick;
 			recentMaxHit = recentMax;
+			return this;
+		}
+
+		/** Walking distances south: to your best teleport's reach and out of the Wilderness, -1 when unknown. */
+		public Builder distances(int toReach, int toDitch)
+		{
+			tilesToReach = toReach;
+			tilesToDitch = toDitch;
 			return this;
 		}
 

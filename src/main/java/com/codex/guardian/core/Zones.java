@@ -128,6 +128,35 @@ public final class Zones
 	}
 
 	/**
+	 * The known place a name refers to, matched without case: an exact name first, then the longest place
+	 * name that contains it or is contained in it ("Barrows" finds "Barrows crypts", "Vorkath trip" finds
+	 * "Vorkath"). A partial match needs four letters or more, so a stray short word cannot claim a place.
+	 */
+	public static Zone byName(String name)
+	{
+		if (name == null || name.trim().length() < 3)
+		{
+			return null;
+		}
+		String wanted = name.trim().toLowerCase(java.util.Locale.ENGLISH);
+		Zone partial = null;
+		for (Zone zone : BY_REGION.values())
+		{
+			String have = zone.getName().toLowerCase(java.util.Locale.ENGLISH);
+			if (have.equals(wanted))
+			{
+				return zone;
+			}
+			boolean overlaps = wanted.length() >= 4 && have.length() >= 4 && (have.contains(wanted) || wanted.contains(have));
+			if (overlaps && (partial == null || zone.getName().length() > partial.getName().length()))
+			{
+				partial = zone;
+			}
+		}
+		return partial;
+	}
+
+	/**
 	 * The Wilderness level for a world coordinate, or 0 outside it. Surface levels start at the
 	 * ditch and rise one every eight tiles north; the dungeons below mirror the surface.
 	 */
@@ -144,6 +173,22 @@ public final class Zones
 			return (y - 9920) / 8 + 1;
 		}
 		return 0;
+	}
+
+	/**
+	 * Tiles to walk due south from a Wilderness coordinate until the level is {@code level} or lower, where 0
+	 * means out of the Wilderness altogether. 0 when already there; -1 when the coordinate is not on the
+	 * Wilderness map, so no distance can be promised.
+	 */
+	public static int tilesSouthTo(int x, int y, int level)
+	{
+		if (wildernessLevel(x, y) <= 0 || level < 0)
+		{
+			return -1;
+		}
+		// Level n covers eight rows of tiles from the ditch; the last row of level n is base + 8n - 1.
+		int base = y >= 9920 ? 9920 : 3520;
+		return Math.max(0, y - (base + 8 * level - 1));
 	}
 
 	/**

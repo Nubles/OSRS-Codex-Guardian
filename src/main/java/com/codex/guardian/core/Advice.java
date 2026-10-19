@@ -37,15 +37,31 @@ public final class Advice
 			{
 				return "Eat, or teleport: " + way;
 			}
+			int toReach = s.getTilesToReach();
+			int toDitch = s.getTilesToDitch();
 			if (food)
 			{
-				return wild > 0 ? walkBack ? "Eat, walk south to level " + walkTo : "Eat, and run south" : "Eat now and back away";
+				if (wild <= 0)
+				{
+					return "Eat now and back away";
+				}
+				if (walkBack)
+				{
+					return toReach > 0 ? "Eat, walk " + toReach + " tiles south" : "Eat, walk south to level " + walkTo;
+				}
+				return "Eat, and run south";
 			}
-			return wild > 0 ? "Run south now" : s.isTeleblocked() ? "Run: teleblocked, no food" : "Run: no food, no teleport";
+			if (wild > 0)
+			{
+				return walkBack && toReach > 0 ? "Run " + toReach + " tiles south" : toDitch > 0 ? "Run " + toDitch + " tiles south"
+					: "Run south now";
+			}
+			return s.isTeleblocked() ? "Run: teleblocked, no food" : "Run: no food, no teleport";
 		}
 		if (wild > 0 && !escape && walkBack)
 		{
-			return "Walk south to level " + walkTo;
+			int toReach = s.getTilesToReach();
+			return toReach > 0 ? "Walk " + toReach + " tiles south" : "Walk south to level " + walkTo;
 		}
 		if (!food && s.inHarmsWay())
 		{

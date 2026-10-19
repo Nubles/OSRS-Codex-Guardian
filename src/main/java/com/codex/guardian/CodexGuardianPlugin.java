@@ -4,6 +4,8 @@ import com.codex.guardian.core.Advice;
 import com.codex.guardian.core.CloseCallWatch;
 import com.codex.guardian.core.DamageLog;
 import com.codex.guardian.core.Journal;
+import com.codex.guardian.core.KitPlan;
+import com.codex.guardian.core.OneLife;
 import com.codex.guardian.core.Peril;
 import com.codex.guardian.core.PerilAssessor;
 import com.codex.guardian.core.Readiness;
@@ -11,6 +13,7 @@ import com.codex.guardian.core.Risk;
 import com.codex.guardian.core.Situation;
 import com.codex.guardian.core.Supplies;
 import com.codex.guardian.core.Threat;
+import com.codex.guardian.core.TripCheck;
 import com.codex.guardian.core.Zone;
 import com.codex.guardian.core.Zones;
 import com.codex.guardian.overlay.PerilVignette;
@@ -20,11 +23,14 @@ import com.codex.guardian.ui.Mark;
 import com.codex.guardian.ui.Shield;
 import com.codex.guardian.ui.Theme;
 import com.google.gson.Gson;
+import com.google.gson.JsonObject;
 import com.google.inject.Provides;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -50,6 +56,8 @@ import net.runelite.api.events.GameTick;
 import net.runelite.api.events.HitsplatApplied;
 import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.StatChanged;
+import net.runelite.api.events.WidgetClosed;
+import net.runelite.api.gameval.ItemID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.InventoryID;
@@ -76,6 +84,14 @@ import net.runelite.client.ui.overlay.OverlayManager;
 public class CodexGuardianPlugin extends Plugin
 {
 	private static final String JOURNAL_KEY = "journal";
+	/** This account's own one-life choice, "true" or "false"; absent until the account has one. */
+	static final String ONE_LIFE_KEY = "oneLifeAccount";
+	/** Codex Quartermaster's saved data, read only, for the kit you packed and what your bank holds. */
+	static final String QUARTERMASTER_GROUP = "codexquartermaster";
+	static final String QUARTERMASTER_KEY = "quarters";
+	/** Last resorts worth pointing out in the bank, by the item ids Quartermaster's bank record uses. */
+	private static final int[][] BANKED_GRACES = {{ItemID.RING_OF_LIFE}, {ItemID.JEWL_NECKLACE_OF_PHOENIX}, {ItemID.TOB_TELEPORT}};
+	private static final String[] BANKED_GRACE_NAMES = {"Ring of life", "Phoenix necklace", "Escape crystal"};
 	/** Save the journal about once a minute while playing, and at every important moment. */
 	private static final int SAVE_TICKS = 100;
 	/** The journal's run time and danger time tick constantly; send the panel a fresh copy every half minute. */
@@ -129,6 +145,19 @@ public class CodexGuardianPlugin extends Plugin
 	private Journal journal;
 	private String journalProfile;
 	private boolean journalChanged;
+	/** This account's one-life choice; false until a profile is loaded. */
+	private boolean accountOneLife;
+	/** The kit chosen in Codex Quartermaster and its bank record, or null without one. */
+	private KitPlan kitPlan;
+	/** Names of the kit's single items, resolved on the client thread when the kit is read. */
+	private final Map<Integer, String> kitItemNames = new HashMap<>();
+	/** Last resorts in the bank by name, from the bank itself this session or else Quartermaster's record. */
+	private final Map<String, Integer> bankGraces = new LinkedHashMap<>();
+	private boolean bankSeenThisSession;
+	private List<Supplies.Item> lastInventory = Collections.emptyList();
+	private List<Supplies.Item> lastWorn = Collections.emptyList();
+	private TripCheck trip;
+	private boolean tripDirty = true;
 	private int ticksSinceSave;
 	private int ticksSincePublish;
 
@@ -169,7 +198,8 @@ public class CodexGuardianPlugin extends Plugin
 	protected void startUp()
 	{
 		assessor = new PerilAssessor(config.foodReserve());
-		panel = new GuardianPanel(config.foodReserve(), () -> clientThread.invokeLater(this::newRun));
+		panel = new GuardianPanel(config.foodReserve(), () -> clientThread.invokeLater(this::newRun),
+			value -> clientThread.invokeLater(() -> setOneLife(value)));
 		navButton = NavigationButton.builder()
 			.tooltip("Codex Guardian")
 			.icon(Shield.icon(16))
@@ -196,6 +226,7 @@ public class CodexGuardianPlugin extends Plugin
 			saveJournal();
 			journal = null;
 			journalProfile = null;
+			forgetProfile();
 		});
 		overlayManager.remove(overlay);
 		overlayManager.remove(vignette);
@@ -230,6 +261,20 @@ public class CodexGuardianPlugin extends Plugin
 		accountType = -1;
 		lastCombatLevel = -1;
 		settled = false;
+		trip = null;
+		tripDirty = true;
+	}
+
+	/** Forgets everything read for the previous account: its one-life choice, its kit and its bank. */
+	private void forgetProfile()
+	{
+		accountOneLife = false;
+		kitPlan = null;
+		kitItemNames.clear();
+		bankGraces.clear();
+		bankSeenThisSession = false;
+		trip = null;
+		tripDirty = true;
 	}
 
 	@Subscribe
@@ -286,6 +331,7 @@ public class CodexGuardianPlugin extends Plugin
 		saveJournal();
 		journal = null;
 		journalProfile = null;
+		forgetProfile();
 		if (client.getGameState() == GameState.LOGGED_IN)
 		{
 			loadJournal();
@@ -295,7 +341,14 @@ public class CodexGuardianPlugin extends Plugin
 	@Subscribe
 	public void onConfigChanged(ConfigChanged event)
 	{
-		if (!CodexGuardianConfig.GROUP.equals(event.getGroup()) || JOURNAL_KEY.equals(event.getKey()))
+		if (QUARTERMASTER_GROUP.equals(event.getGroup()) && QUARTERMASTER_KEY.equals(event.getKey()))
+		{
+			// Quartermaster saved: the kit may have changed. Read it again on the client thread, where it is used.
+			clientThread.invokeLater(this::readKit);
+			return;
+		}
+		if (!CodexGuardianConfig.GROUP.equals(event.getGroup()) || JOURNAL_KEY.equals(event.getKey())
+			|| ONE_LIFE_KEY.equals(event.getKey()))
 		{
 			return;
 		}
@@ -319,6 +372,22 @@ public class CodexGuardianPlugin extends Plugin
 		if (event.getContainerId() == InventoryID.INV || event.getContainerId() == InventoryID.WORN)
 		{
 			readinessDirty = true;
+		}
+		else if (event.getContainerId() == InventoryID.BANK && event.getItemContainer() != null)
+		{
+			readBankGraces(event.getItemContainer());
+		}
+	}
+
+	@Subscribe
+	public void onWidgetClosed(WidgetClosed event)
+	{
+		// Walking away from the bank is the last moment to fix a pack: brief the trip check there.
+		if (event.getGroupId() == InterfaceID.BANKMAIN && event.isUnload() && settled && config.briefings()
+			&& client.getGameState() == GameState.LOGGED_IN)
+		{
+			tripDirty = true;
+			brief(Briefing.TRIP, null);
 		}
 	}
 
@@ -395,6 +464,7 @@ public class CodexGuardianPlugin extends Plugin
 		damage.tick();
 
 		Situation s = read(local);
+		updateTrip();
 		Peril p = assessor.assess(s);
 		situation = s;
 		peril = p;
@@ -440,7 +510,7 @@ public class CodexGuardianPlugin extends Plugin
 		int type = client.getVarbitValue(VarbitID.IRONMAN);
 		boolean hardcore = type == 3 || type == 5;
 		String mode = modeName(type);
-		if (!hardcore && config.oneLife())
+		if (!hardcore && accountOneLife)
 		{
 			b.mode("One-life account", true);
 		}
@@ -494,12 +564,22 @@ public class CodexGuardianPlugin extends Plugin
 
 		if (readinessDirty || maxHp != readinessMaxHp || inWilderness != readinessInWilderness)
 		{
-			readiness = Supplies.assess(items(InventoryID.INV), items(InventoryID.WORN), maxHp, inWilderness);
+			lastInventory = items(InventoryID.INV);
+			lastWorn = items(InventoryID.WORN);
+			readiness = Supplies.assess(lastInventory, lastWorn, maxHp, inWilderness);
 			readinessDirty = false;
+			tripDirty = true;
 			readinessMaxHp = maxHp;
 			readinessInWilderness = inWilderness;
 		}
 		b.readiness(readiness);
+		// Read after the pack, so the distance is to the reach of the teleport carried this tick.
+		if (wild > 0 && where != null)
+		{
+			int reach = readiness.getEscapeReach();
+			b.distances(reach >= 0 && wild > reach ? Zones.tilesSouthTo(where.getX(), where.getY(), reach) : -1,
+				Zones.tilesSouthTo(where.getX(), where.getY(), 0));
+		}
 		return b.build();
 	}
 
@@ -853,6 +933,23 @@ public class CodexGuardianPlugin extends Plugin
 		int wild = s.getWildernessLevel();
 		switch (briefingKind)
 		{
+			case TRIP:
+			{
+				TripCheck t = trip;
+				// Only a known trip is briefed; once you are somewhere dangerous, that place's own briefing takes over.
+				if (t == null || t.getDestination() == null && t.getKit() == null || s.inHarmsWay() || wild > 0)
+				{
+					return null;
+				}
+				List<WardOverlay.Check> checks = new ArrayList<>();
+				for (TripCheck.Line line : t.worst(3))
+				{
+					checks.add(new WardOverlay.Check(Mark.of(line.getTone()), line.getText()));
+				}
+				String where = t.getDestination() != null ? t.getDestination() : t.getKit();
+				return new WardOverlay.Briefing("BEFORE YOU GO", where, t.isClear() ? "READY" : "CHECK",
+					t.isClear() ? Theme.TEAL : Theme.EMBER, checks);
+			}
 			case APPROACH:
 				if (!s.isNearWilderness() && wild == 0)
 				{
@@ -869,7 +966,8 @@ public class CodexGuardianPlugin extends Plugin
 				String best = shortName(s.getReadiness().getBestEscape());
 				int reach = Math.max(0, s.getReadiness().getEscapeReach());
 				checks.add(new WardOverlay.Check(Mark.Kind.BAD, best + " stops at level " + reach));
-				checks.add(new WardOverlay.Check(Mark.Kind.WARN, "Walk south to level " + reach));
+				int tiles = s.getTilesToReach();
+				checks.add(new WardOverlay.Check(Mark.Kind.WARN, tiles > 0 ? "Walk " + tiles + " tiles south" : "Walk south to level " + reach));
 				checks.addAll(kitChecks(s).subList(0, 1));
 				return new WardOverlay.Briefing("LEVEL " + wild, "Past your teleport", "NO ESCAPE", Theme.BLOOD, checks);
 			}
@@ -917,6 +1015,7 @@ public class CodexGuardianPlugin extends Plugin
 	/** The moments that open the plaque into a briefing. */
 	private enum Briefing
 	{
+		TRIP,
 		ZONE,
 		APPROACH,
 		LIMIT
@@ -980,6 +1079,14 @@ public class CodexGuardianPlugin extends Plugin
 		}
 		journal = loaded == null ? Journal.fresh(System.currentTimeMillis()) : loaded.repair();
 		journalProfile = profile;
+		OneLife.Decision oneLife = OneLife.resolve(configManager.getConfiguration(CodexGuardianConfig.GROUP, profile, ONE_LIFE_KEY),
+			config.oneLife(), loaded != null);
+		accountOneLife = oneLife.isOneLife();
+		if (oneLife.shouldSave())
+		{
+			configManager.setConfiguration(CodexGuardianConfig.GROUP, profile, ONE_LIFE_KEY, "true");
+		}
+		readKit();
 		journalChanged = true;
 		if (loaded == null)
 		{
@@ -996,6 +1103,125 @@ public class CodexGuardianPlugin extends Plugin
 			return;
 		}
 		configManager.setConfiguration(CodexGuardianConfig.GROUP, journalProfile, JOURNAL_KEY, gson.toJson(journal));
+	}
+
+	/** Called on the client thread when the player marks this account one-life, or not, in the panel. */
+	private void setOneLife(boolean value)
+	{
+		if (journalProfile == null)
+		{
+			return;
+		}
+		accountOneLife = value;
+		configManager.setConfiguration(CodexGuardianConfig.GROUP, journalProfile, ONE_LIFE_KEY, String.valueOf(value));
+		// The next tick's read carries the new mode to the panel and the journal summary.
+		shownSituation = null;
+		publishJournal();
+	}
+
+	/**
+	 * Reads the kit chosen in Codex Quartermaster, if it is installed and one is chosen, and resolves the
+	 * names of the single items it packs. Without Quartermaster this leaves no plan, and the trip check falls
+	 * back to Guardian's own food, teleport and last-resort checks.
+	 */
+	private void readKit()
+	{
+		String profile = configManager.getRSProfileKey();
+		KitPlan plan = null;
+		if (profile != null)
+		{
+			String json = configManager.getConfiguration(QUARTERMASTER_GROUP, profile, QUARTERMASTER_KEY);
+			if (json != null && !json.isEmpty())
+			{
+				try
+				{
+					plan = KitPlan.from(gson.fromJson(json, JsonObject.class));
+				}
+				catch (RuntimeException e)
+				{
+					plan = null;
+				}
+			}
+		}
+		kitPlan = plan;
+		kitItemNames.clear();
+		if (plan != null && client.getGameState() == GameState.LOGGED_IN)
+		{
+			for (KitPlan.Need need : plan.getNeeds())
+			{
+				if (need.getItemId() >= 0)
+				{
+					kitItemNames.put(need.getItemId(), client.getItemDefinition(need.getItemId()).getName());
+				}
+			}
+		}
+		if (!bankSeenThisSession)
+		{
+			bankGraces.clear();
+			if (plan != null)
+			{
+				for (int i = 0; i < BANKED_GRACES.length; i++)
+				{
+					long count = 0;
+					for (int id : BANKED_GRACES[i])
+					{
+						count += plan.inBank(id);
+					}
+					if (count > 0)
+					{
+						bankGraces.put(BANKED_GRACE_NAMES[i], (int) Math.min(Integer.MAX_VALUE, count));
+					}
+				}
+			}
+		}
+		tripDirty = true;
+	}
+
+	/** Counts the last resorts in the bank while it is open; this beats Quartermaster's older record. */
+	private void readBankGraces(ItemContainer bank)
+	{
+		Map<String, Integer> found = new LinkedHashMap<>();
+		for (Item item : bank.getItems())
+		{
+			if (item == null || item.getId() < 0 || item.getQuantity() <= 0)
+			{
+				continue;
+			}
+			for (int i = 0; i < BANKED_GRACES.length; i++)
+			{
+				for (int id : BANKED_GRACES[i])
+				{
+					if (item.getId() == id)
+					{
+						found.merge(BANKED_GRACE_NAMES[i], item.getQuantity(), Integer::sum);
+					}
+				}
+			}
+		}
+		bankGraces.clear();
+		bankGraces.putAll(found);
+		bankSeenThisSession = true;
+		tripDirty = true;
+	}
+
+	/** Works the trip check out again when the pack, the kit or the bank changed, and hands it to the panel. */
+	private void updateTrip()
+	{
+		if (!tripDirty)
+		{
+			return;
+		}
+		tripDirty = false;
+		KitPlan plan = kitPlan;
+		Zone destination = TripCheck.destinationFor(plan == null ? null : plan.getName());
+		TripCheck next = TripCheck.build(destination, plan, kitItemNames, lastInventory, lastWorn, readiness, bankGraces,
+			config.foodReserve());
+		trip = next;
+		GuardianPanel target = panel;
+		if (target != null)
+		{
+			SwingUtilities.invokeLater(() -> target.updateTrip(next));
+		}
 	}
 
 	private void newRun()
