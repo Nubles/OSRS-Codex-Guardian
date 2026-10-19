@@ -56,11 +56,11 @@ public class LedgerWorthTest
 	@Test
 	public void shortCoinsNeverReadAThousandOfAUnit()
 	{
-		// Rounding up at the top of a unit used to give "1000K" and "1000M".
-		assertEquals("999k", LedgerWorth.shortCoins(999_600));
-		assertEquals("999.9M", LedgerWorth.shortCoins(999_960_000));
-		assertEquals("9.9M", LedgerWorth.shortCoins(9_990_000));
+		// Rounding up at the top of a unit used to give "1000K" and "1000M"; it is written in the next unit.
+		assertEquals("1.0M", LedgerWorth.shortCoins(999_600));
+		assertEquals("1.00B", LedgerWorth.shortCoins(999_960_000));
+		assertEquals("10.0M", LedgerWorth.shortCoins(9_990_000));
 		assertEquals("1.0M", LedgerWorth.shortCoins(1_000_000));
-		assertEquals("9.99B", LedgerWorth.shortCoins(9_999_000_000L));
+		assertEquals("10.00B", LedgerWorth.shortCoins(9_999_000_000L));
 	}
 }

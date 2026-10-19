@@ -1,6 +1,7 @@
 package com.codex.guardian.core;
 
 import com.google.gson.Gson;
+import java.util.Locale;
 
 /**
  * What the account is worth, as Codex Ledger keeps it in its RS-profile key {@code codexledger/ledger}:
@@ -48,37 +49,24 @@ public final class LedgerWorth
 	}
 
 	/**
-	 * "830k", "12.4M", "1.23B", "950 gp": short enough for one column of the seal, by the suite's one rule (whole
-	 * thousands below a million, millions to one decimal, billions to two). Rounded down, so never "1000k".
+	 * "8,240", "830k", "12.4M", "1.23B": short enough for one column of the seal, by the suite's one rule, as Codex
+	 * Ledger writes the same worth: in full below 10,000, whole thousands below a million, millions to one decimal,
+	 * billions to two. A figure that rounds up to a thousand of one unit is written in the next ("1.0M", not "1000k").
 	 */
 	public static String shortCoins(long coins)
 	{
-		if (coins >= 1_000_000_000L)
+		if (coins < 10_000)
 		{
-			return fixed(coins, 1_000_000_000L, 2) + "B";
+			return String.format(Locale.ENGLISH, "%,d", coins);
 		}
-		if (coins >= 1_000_000L)
+		if (coins < 999_500)
 		{
-			return fixed(coins, 1_000_000L, 1) + "M";
+			return Math.round(coins / 1_000.0) + "k";
 		}
-		if (coins >= 1_000L)
+		if (coins < 999_950_000)
 		{
-			return coins / 1_000L + "k";
+			return String.format(Locale.ENGLISH, "%.1fM", coins / 1_000_000.0);
 		}
-		return coins + " gp";
-	}
-
-	/** {@code coins / unit} rounded down to {@code places} decimals, worked in whole numbers so it never rounds up. */
-	private static String fixed(long coins, long unit, int places)
-	{
-		long scale = places == 2 ? 100 : 10;
-		long scaled = coins / (unit / scale);
-		long whole = scaled / scale;
-		String frac = String.valueOf(scaled % scale);
-		while (frac.length() < places)
-		{
-			frac = "0" + frac;
-		}
-		return whole + "." + frac;
+		return String.format(Locale.ENGLISH, "%.2fB", coins / 1_000_000_000.0);
 	}
 }
