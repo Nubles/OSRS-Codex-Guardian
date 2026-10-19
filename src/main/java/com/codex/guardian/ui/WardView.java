@@ -68,7 +68,6 @@ final class WardView
 		stack.add(new SectionHeader("Readiness"));
 		stack.add(readiness(s, foodReserve));
 
-
 		// Every reason except the ones the dial already says out loud.
 		String headline = peril.headline();
 		boolean paceShown = paceShown(peril);
@@ -93,7 +92,8 @@ final class WardView
 
 	/**
 	 * The trip check shows while nothing is happening: no attackers, nowhere dangerous, not in the Wilderness,
-	 * and only when there is a trip to check (a Quartermaster kit) or a last resort sitting in the bank.
+	 * and only when there is a trip to check (a Quartermaster kit), or a last resort sitting in the bank while
+	 * the pack looks like a fight. A skiller with a ring of life banked is not told daily that they have no food.
 	 */
 	static boolean showTrip(Situation s, TripCheck trip)
 	{
@@ -104,6 +104,10 @@ final class WardView
 		if (trip.getDestination() != null || trip.getKit() != null)
 		{
 			return true;
+		}
+		if (s.getReadiness() == null || !TripCheck.packedForTrip(s.getReadiness()))
+		{
+			return false;
 		}
 		for (TripCheck.Line line : trip.getLines())
 		{
