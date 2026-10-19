@@ -1,5 +1,6 @@
 package com.codex.guardian.ui;
 
+import com.codex.guardian.core.HitMemory;
 import com.codex.guardian.core.Journal;
 import java.awt.BorderLayout;
 import java.awt.GridLayout;
@@ -17,7 +18,15 @@ final class PerilsView
 	{
 	}
 
+	/** Hardest hitters listed. */
+	private static final int HITTERS = 6;
+
 	static StackPanel build(Journal journal)
+	{
+		return build(journal, null);
+	}
+
+	static StackPanel build(Journal journal, HitMemory hits)
 	{
 		StackPanel stack = new StackPanel(6, 8);
 		if (journal == null)
@@ -63,6 +72,18 @@ final class PerilsView
 			stack.add(Rows.ledger(rows));
 		}
 
+		if (hits != null && hits.size() > 0)
+		{
+			stack.add(new SectionHeader("Hardest hitters", "remembered"));
+			List<JComponent> rows = new ArrayList<>();
+			for (HitMemory.Record r : hits.hardest(HITTERS))
+			{
+				rows.add(hitter(r));
+			}
+			stack.add(Rows.ledger(rows));
+			stack.add(Rows.note("When one of these is on you, Guardian warns before your hitpoints fall under its best hit.", 190));
+		}
+
 		List<Map.Entry<String, Integer>> places = top(journal.getCloseCallsByPlace(), 5);
 		if (!places.isEmpty())
 		{
@@ -75,7 +96,7 @@ final class PerilsView
 			stack.add(Rows.ledger(rows));
 		}
 
-		if (journal.getDeaths() > 0 || journal.getDisconnects() > 0 || journal.getSafeDeaths() > 0)
+		if (journal.getDeaths() > 0 || journal.getDisconnects() > 0 || journal.getSafeDeaths() > 0 || journal.getLagSpikes() > 0)
 		{
 			stack.add(new SectionHeader("Scars"));
 			if (journal.getDeaths() > 0)
@@ -90,8 +111,39 @@ final class PerilsView
 			{
 				stack.add(Rows.check(Mark.Kind.WARN, "Disconnects in danger", null, String.valueOf(journal.getDisconnects())));
 			}
+			if (journal.getLagSpikes() > 0)
+			{
+				stack.add(Rows.check(Mark.Kind.WARN, "Lag in danger", "Survived", String.valueOf(journal.getLagSpikes())));
+			}
 		}
 		return stack;
+	}
+
+	/** A monster, its level and where it hit hardest, with that hit in large type. */
+	private static JComponent hitter(HitMemory.Record r)
+	{
+		JPanel row = new JPanel(new BorderLayout(6, 0));
+		row.setOpaque(false);
+		row.setBorder(new EmptyBorder(5, 0, 5, 0));
+		JPanel text = new JPanel(new BorderLayout(0, 1));
+		text.setOpaque(false);
+		javax.swing.JLabel name = Ui.label(r.getName(), Theme.body(), Theme.TEXT);
+		name.setToolTipText(r.getName() + ", level " + r.getLevel());
+		text.add(name, BorderLayout.NORTH);
+		String where = r.getPlace() == null ? "Level " + r.getLevel() : "Level " + r.getLevel() + "  ·  " + r.getPlace();
+		javax.swing.JLabel sub = Ui.label(where, Theme.small(), Theme.TEXT_MUTED);
+		sub.setToolTipText(where);
+		text.add(sub, BorderLayout.SOUTH);
+		text.setMinimumSize(new java.awt.Dimension(10, 10));
+		text.setPreferredSize(new java.awt.Dimension(10, text.getPreferredSize().height));
+		row.add(text, BorderLayout.CENTER);
+		JPanel value = new JPanel(new BorderLayout());
+		value.setOpaque(false);
+		value.add(Ui.label(String.valueOf(r.getMax()), Theme.title(), Theme.BLOOD), BorderLayout.NORTH);
+		value.add(Ui.label("max", Theme.small(), Theme.TEXT_FAINT), BorderLayout.SOUTH);
+		row.add(value, BorderLayout.EAST);
+		row.setMaximumSize(new java.awt.Dimension(Integer.MAX_VALUE, row.getPreferredSize().height));
+		return row;
 	}
 
 	private static JComponent bar(String name, int value, int max, int total)

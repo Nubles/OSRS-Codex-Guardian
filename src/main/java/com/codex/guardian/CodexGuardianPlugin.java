@@ -3,11 +3,14 @@ package com.codex.guardian;
 import com.codex.guardian.core.Advice;
 import com.codex.guardian.core.CloseCallWatch;
 import com.codex.guardian.core.DamageLog;
+import com.codex.guardian.core.HitMemory;
 import com.codex.guardian.core.Journal;
 import com.codex.guardian.core.KitPlan;
+import com.codex.guardian.core.Lag;
 import com.codex.guardian.core.OneLife;
 import com.codex.guardian.core.Peril;
 import com.codex.guardian.core.PerilAssessor;
+import com.codex.guardian.core.PlaceMemory;
 import com.codex.guardian.core.Readiness;
 import com.codex.guardian.core.Risk;
 import com.codex.guardian.core.Situation;
@@ -84,6 +87,10 @@ import net.runelite.client.ui.overlay.OverlayManager;
 public class CodexGuardianPlugin extends Plugin
 {
 	private static final String JOURNAL_KEY = "journal";
+	/** The hardest each monster has hit this account, per profile; kept apart from the journal so it outlives a new run. */
+	static final String HITS_KEY = "hitMemory";
+	/** A lag warning comes back at most once a minute, so a bad evening is not a stream of notifications. */
+	private static final int LAG_COOLDOWN_TICKS = 100;
 	/** This account's own one-life choice, "true" or "false"; absent until the account has one. */
 	static final String ONE_LIFE_KEY = "oneLifeAccount";
 	/** Codex Quartermaster's saved data, read only, for the kit you packed and what your bank holds. */
@@ -138,6 +145,11 @@ public class CodexGuardianPlugin extends Plugin
 	private final WardOverlay overlay = new WardOverlay();
 	private final DamageLog damage = new DamageLog();
 	private final CloseCallWatch closeCalls = new CloseCallWatch();
+	private final Lag lag = new Lag();
+	private HitMemory hits = new HitMemory();
+	private boolean hitsChanged;
+	private Lag.State lastLag = Lag.State.STEADY;
+	private int lagCooldown;
 	private final Map<Skill, Integer> levels = new EnumMap<>(Skill.class);
 
 	private PerilAssessor assessor;
@@ -262,6 +274,8 @@ public class CodexGuardianPlugin extends Plugin
 		lastLevel = Peril.Level.CALM;
 		lowHitpointsNotified = false;
 		lastHitSource = null;
+		lag.reset();
+		lastLag = Lag.State.STEADY;
 		accountType = -1;
 		lastCombatLevel = -1;
 		settled = false;
@@ -274,6 +288,8 @@ public class CodexGuardianPlugin extends Plugin
 	private void forgetProfile()
 	{
 		accountOneLife = false;
+		hits = new HitMemory();
+		hitsChanged = false;
 		kitPlan = null;
 		kitItemNames.clear();
 		bankGraces.clear();
@@ -328,6 +344,11 @@ public class CodexGuardianPlugin extends Plugin
 		{
 			readinessDirty = true;
 		}
+		else if (state == GameState.LOADING)
+		{
+			// A region load holds the next tick back on purpose; that pause is not lag.
+			lag.skip();
+		}
 	}
 
 	@Subscribe
@@ -354,7 +375,7 @@ public class CodexGuardianPlugin extends Plugin
 			return;
 		}
 		if (!CodexGuardianConfig.GROUP.equals(event.getGroup()) || JOURNAL_KEY.equals(event.getKey())
-			|| ONE_LIFE_KEY.equals(event.getKey()))
+			|| ONE_LIFE_KEY.equals(event.getKey()) || HITS_KEY.equals(event.getKey()))
 		{
 			return;
 		}
@@ -433,6 +454,7 @@ public class CodexGuardianPlugin extends Plugin
 		damage.hit(amount);
 		String source = sourceOf(hitsplat.getHitsplatType(), local);
 		lastHitSource = source;
+		rememberHit(hitsplat.getHitsplatType(), amount, local);
 		if (journal != null)
 		{
 			journal.damage(source, amount, place(situation), System.currentTimeMillis());
@@ -469,6 +491,7 @@ public class CodexGuardianPlugin extends Plugin
 		}
 		long now = System.currentTimeMillis();
 		damage.tick();
+		lag.tick(System.nanoTime() / 1_000_000L);
 
 		Situation s = read(local);
 		updateTrip();
@@ -494,6 +517,7 @@ public class CodexGuardianPlugin extends Plugin
 			watchCombatLevel(s, now);
 		}
 		watchWilderness(s);
+		watchLag(s, now);
 		alert(s, p);
 		updateOverlays(s, p);
 		publishSituation(s, p);
@@ -562,9 +586,10 @@ public class CodexGuardianPlugin extends Plugin
 		{
 			if (npc.getInteracting() == local && !npc.isDead() && npc.getCombatLevel() > 0)
 			{
-				b.attacker(new Threat(npc.getName(), npc.getCombatLevel(), false));
+				b.attacker(new Threat(npc.getName(), npc.getCombatLevel(), false, hits.max(npc.getName(), npc.getCombatLevel())));
 			}
 		}
+		b.lag(lag.state(), lag.describe());
 		// Outside PvP areas other players "interact" with you just by following or trading.
 		if (wild > 0 || zone != null && zone.getKind() == Zone.Kind.PVP_WORLD)
 		{
@@ -746,6 +771,81 @@ public class CodexGuardianPlugin extends Plugin
 			saveJournal();
 		}
 		accountType = type;
+	}
+
+	/**
+	 * Remembers a hit when exactly one monster is attacking you and no player is: only then is there no doubt
+	 * whose hit it was. Poison, venom, burns and other damage over time belong to no single hit.
+	 */
+	private void rememberHit(int type, int amount, Player local)
+	{
+		switch (type)
+		{
+			case HitsplatID.POISON:
+			case HitsplatID.VENOM:
+			case HitsplatID.DISEASE:
+			case HitsplatID.BURN:
+			case HitsplatID.BLEED:
+				return;
+			default:
+				break;
+		}
+		NPC only = null;
+		for (NPC npc : client.getTopLevelWorldView().npcs())
+		{
+			if (npc.getInteracting() == local && !npc.isDead() && npc.getCombatLevel() > 0)
+			{
+				if (only != null)
+				{
+					return;
+				}
+				only = npc;
+			}
+		}
+		if (only == null || only.getName() == null)
+		{
+			return;
+		}
+		for (Player other : client.getTopLevelWorldView().players())
+		{
+			if (other != local && other.getInteracting() == local)
+			{
+				return;
+			}
+		}
+		if (hits.record(only.getName(), only.getCombatLevel(), amount, place(situation), System.currentTimeMillis()))
+		{
+			hitsChanged = true;
+			// The Perils page lists the hardest hitters; a new record is worth showing.
+			journalChanged = true;
+		}
+	}
+
+	/** Lag that starts while something can hurt you: a notification and a line in the journal, once a minute at most. */
+	private void watchLag(Situation s, long now)
+	{
+		if (lagCooldown > 0)
+		{
+			lagCooldown--;
+		}
+		Lag.State state = s.getLag();
+		boolean exposed = (!s.getAttackers().isEmpty() || s.getDamagePerTick() > 0 || s.risk().atLeast(Risk.HIGH)
+			|| s.getWildernessLevel() > 0) && s.risk() != Risk.SAFE;
+		if (settled && exposed && state != Lag.State.STEADY && lastLag == Lag.State.STEADY && lagCooldown == 0)
+		{
+			lagCooldown = LAG_COOLDOWN_TICKS;
+			if (journal != null)
+			{
+				journal.lag(s.getLagText(), place(s), now);
+				journalChanged = true;
+			}
+			if (config.notifyLag())
+			{
+				notifier.notify("Guardian: lag in danger (" + s.getLagText().toLowerCase() + ")"
+					+ (s.canEscape() ? ". Teleport out while it works." : ""));
+			}
+		}
+		lastLag = state;
 	}
 
 	private void watchZone(Situation s, long now)
@@ -1000,7 +1100,13 @@ public class CodexGuardianPlugin extends Plugin
 				}
 				else
 				{
-					checks = kitChecks(s);
+					checks = new ArrayList<>(kitChecks(s));
+					// A place you nearly died at gets a reminder at its door: the first thing remembered there.
+					List<String> memory = PlaceMemory.lines(journal, hits, PlaceMemory.placeOf(s));
+					if (!memory.isEmpty())
+					{
+						checks.add(new WardOverlay.Check(Mark.Kind.WARN, memory.get(0)));
+					}
 				}
 				String risk = zone.getKind() == Zone.Kind.WILDERNESS ? "LEVEL " + wild : zone.getRisk().getLabel().toUpperCase() + " RISK";
 				return new WardOverlay.Briefing("ENTERING", zone.getName(), risk, Theme.risk(zone.getRisk()), checks);
@@ -1069,7 +1175,8 @@ public class CodexGuardianPlugin extends Plugin
 			return;
 		}
 		Journal copy = journal == null ? null : gson.fromJson(gson.toJson(journal), Journal.class).repair();
-		SwingUtilities.invokeLater(() -> target.updateJournal(copy));
+		HitMemory hitCopy = journal == null ? null : gson.fromJson(gson.toJson(hits), HitMemory.class).repair();
+		SwingUtilities.invokeLater(() -> target.updateJournal(copy, hitCopy));
 	}
 
 	private void loadJournal()
@@ -1094,6 +1201,8 @@ public class CodexGuardianPlugin extends Plugin
 		}
 		journal = loaded == null ? Journal.fresh(System.currentTimeMillis()) : loaded.repair();
 		journalProfile = profile;
+		hits = loadHits(profile);
+		hitsChanged = false;
 		OneLife.Decision oneLife = OneLife.resolve(configManager.getConfiguration(CodexGuardianConfig.GROUP, profile, ONE_LIFE_KEY),
 			config.oneLife(), loaded != null);
 		accountOneLife = oneLife.isOneLife();
@@ -1118,6 +1227,32 @@ public class CodexGuardianPlugin extends Plugin
 			return;
 		}
 		configManager.setConfiguration(CodexGuardianConfig.GROUP, journalProfile, JOURNAL_KEY, gson.toJson(journal));
+		if (hitsChanged)
+		{
+			hitsChanged = false;
+			configManager.setConfiguration(CodexGuardianConfig.GROUP, journalProfile, HITS_KEY, gson.toJson(hits));
+		}
+	}
+
+	private HitMemory loadHits(String profile)
+	{
+		String json = configManager.getConfiguration(CodexGuardianConfig.GROUP, profile, HITS_KEY);
+		if (json != null && !json.isEmpty())
+		{
+			try
+			{
+				HitMemory loaded = gson.fromJson(json, HitMemory.class);
+				if (loaded != null)
+				{
+					return loaded.repair();
+				}
+			}
+			catch (RuntimeException e)
+			{
+				// A damaged record is not worth a crash; the memory starts again.
+			}
+		}
+		return new HitMemory();
 	}
 
 	/** Called on the client thread when the player marks this account one-life, or not, in the panel. */
@@ -1245,7 +1380,8 @@ public class CodexGuardianPlugin extends Plugin
 		KitPlan plan = kitPlan;
 		Zone destination = TripCheck.destinationFor(plan == null ? null : plan.getName());
 		TripCheck next = TripCheck.build(destination, plan, kitItemNames, lastInventory, lastWorn, readiness, bankGraces,
-			config.foodReserve());
+			config.foodReserve()).withMemory(destination == null ? null
+				: PlaceMemory.lines(journal, hits, destination.getName()));
 		trip = next;
 		GuardianPanel target = panel;
 		if (target != null)

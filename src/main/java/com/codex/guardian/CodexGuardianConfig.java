@@ -152,6 +152,18 @@ public interface CodexGuardianConfig extends Config
 		return true;
 	}
 
+	@ConfigItem(
+		keyName = "notifyLag",
+		name = "Notify lag in danger",
+		description = "Sends a notification when game ticks start arriving late while something can hurt you",
+		position = 6,
+		section = alerts
+	)
+	default boolean notifyLag()
+	{
+		return true;
+	}
+
 	/**
 	 * The old setting shared by every account. One-life is now chosen per account in the panel's Journal tab;
 	 * this stays, hidden, so accounts played under it carry it over once. See {@code OneLife}.

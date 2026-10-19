@@ -23,7 +23,9 @@ public final class Journal
 		DISCONNECT,
 		MILESTONE,
 		/** A death in a safe minigame: worth remembering, but it costs nothing. */
-		SAFE_DEATH
+		SAFE_DEATH,
+		/** Lag or a freeze while something could hurt you. */
+		LAG
 	}
 
 	public static final class Entry
@@ -102,6 +104,8 @@ public final class Journal
 	/** Deaths in safe minigames, which do not end a run. */
 	int safeDeaths;
 	int disconnects;
+	/** Bouts of lag survived while something could hurt you. */
+	int lagSpikes;
 	boolean statusLost;
 	/** Set once Guardian has seen this account as hardcore, so a loss of status while away is still noticed. */
 	boolean hardcoreSeen;
@@ -110,6 +114,8 @@ public final class Journal
 	Hit biggestHit;
 	Map<String, Integer> damageBySource = new LinkedHashMap<>();
 	Map<String, Integer> closeCallsByPlace = new LinkedHashMap<>();
+	/** The lowest hitpoints of any close call at each place, keyed like {@link #closeCallsByPlace}. */
+	Map<String, Integer> lowestByPlace = new LinkedHashMap<>();
 	List<Entry> entries = new ArrayList<>();
 
 	/** Gson leaves fields it did not find as null; this puts them back. */
@@ -127,6 +133,11 @@ public final class Journal
 		{
 			entries = new ArrayList<>();
 		}
+		if (lowestByPlace == null)
+		{
+			lowestByPlace = new LinkedHashMap<>();
+		}
+		lowestByPlace.values().removeIf(v -> v == null);
 		entries.removeIf(e -> e == null || e.type == null);
 		// Older journals split Wilderness close calls by level; one row for the Wilderness ranks it honestly.
 		Map<String, Integer> places = new LinkedHashMap<>();
@@ -186,6 +197,7 @@ public final class Journal
 		closeCalls++;
 		String where = place == null ? "Gielinor" : place;
 		closeCallsByPlace.merge(area(where), 1, Integer::sum);
+		lowestByPlace.merge(area(where), lowest, Math::min);
 		if (lowestHitpoints < 0 || lowest < lowestHitpoints)
 		{
 			lowestHitpoints = lowest;
@@ -243,6 +255,32 @@ public final class Journal
 	{
 		disconnects++;
 		add(now, Type.DISCONNECT, "Disconnected in danger", place == null ? null : capitalise(at(place)));
+	}
+
+	/** Notes a bout of lag survived where something could hurt you. */
+	public void lag(String what, String place, long now)
+	{
+		lagSpikes++;
+		add(now, Type.LAG, "Lag in danger", what + (place == null ? "" : " " + at(place)));
+	}
+
+	/**
+	 * What the journal remembers about a place, for a briefing at its door: "2 close calls here, 4 hp low".
+	 * Null when nothing has happened there.
+	 */
+	public String memoryOf(String place)
+	{
+		if (place == null)
+		{
+			return null;
+		}
+		Integer count = closeCallsByPlace.get(area(place));
+		if (count == null || count <= 0)
+		{
+			return null;
+		}
+		Integer lowest = lowestByPlace.get(area(place));
+		return (count == 1 ? "A close call here" : count + " close calls here") + (lowest != null ? ", " + lowest + " hp low" : "");
 	}
 
 	/** "in the Wilderness level 20", "at Vorkath": the Wilderness is a region, everything else a place you stand at. */
@@ -363,6 +401,11 @@ public final class Journal
 	public int getDisconnects()
 	{
 		return disconnects;
+	}
+
+	public int getLagSpikes()
+	{
+		return lagSpikes;
 	}
 
 	public boolean isStatusLost()

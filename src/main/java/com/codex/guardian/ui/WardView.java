@@ -36,6 +36,15 @@ final class WardView
 
 	static StackPanel build(Situation s, Peril peril, PerilGauge gauge, int foodReserve, TripCheck trip)
 	{
+		return build(s, peril, gauge, foodReserve, trip, java.util.Collections.emptyList());
+	}
+
+	/**
+	 * @param memory what the account has lived through where it stands (see {@code PlaceMemory}), shown on the
+	 *               place card; may be empty
+	 */
+	static StackPanel build(Situation s, Peril peril, PerilGauge gauge, int foodReserve, TripCheck trip, List<String> memory)
+	{
 		StackPanel stack = new StackPanel(6, 8);
 		if (!s.isLoggedIn())
 		{
@@ -63,7 +72,7 @@ final class WardView
 		}
 
 		stack.add(new SectionHeader("Where you are"));
-		stack.add(place(s));
+		stack.add(place(s, memory));
 
 		stack.add(new SectionHeader("Readiness"));
 		stack.add(readiness(s, foodReserve));
@@ -138,7 +147,8 @@ final class WardView
 	/** The place card and the readiness ledger already carry these, each with its own verdict mark. */
 	private static boolean saidElsewhere(Peril.Reason r)
 	{
-		return r.getTopic() == Peril.Topic.PLACE || r.getTopic() == Peril.Topic.KIT || r.getTone() == Peril.Tone.GOOD;
+		return r.getTopic() == Peril.Topic.PLACE || r.getTopic() == Peril.Topic.KIT || r.getTopic() == Peril.Topic.LINK
+			|| r.getTone() == Peril.Tone.GOOD;
 	}
 
 	private static boolean paceShown(Peril peril)
@@ -207,13 +217,17 @@ final class WardView
 			int n = counts.get(e.getKey());
 			boolean outclassed = t.isPlayer() || t.getCombatLevel() >= s.getCombatLevel() + 20;
 			String name = (t.getName() == null ? "Unknown" : t.getName()) + (n > 1 ? "  x" + n : "");
-			String value = t.isPlayer() ? "Player, lvl " + t.getCombatLevel() : "Level " + t.getCombatLevel();
-			rows.add(Rows.fact(outclassed ? Mark.Kind.BAD : Mark.Kind.WARN, name, value, outclassed ? Theme.BLOOD : null));
+			// What it has hit you for before is the figure to eat against; it replaces the level when known.
+			boolean deadly = t.getKnownMax() > 0 && t.getKnownMax() >= s.getHitpoints();
+			String value = t.isPlayer() ? "Player, lvl " + t.getCombatLevel()
+				: t.getKnownMax() > 0 ? "Hits " + t.getKnownMax() : "Level " + t.getCombatLevel();
+			rows.add(Rows.fact(outclassed || deadly ? Mark.Kind.BAD : Mark.Kind.WARN, name, value,
+				outclassed || deadly ? Theme.BLOOD : null));
 		}
 		return Rows.ledger(rows);
 	}
 
-	private static Card place(Situation s)
+	private static Card place(Situation s, List<String> memory)
 	{
 		Zone zone = s.getZone();
 		Card card = new Card(new BorderLayout(0, 4));
@@ -279,6 +293,13 @@ final class WardView
 		adviceLabel.setBorder(new EmptyBorder(4, 0, 0, 0));
 		adviceLabel.setAlignmentX(0f);
 		body.add(adviceLabel);
+		for (String line : memory)
+		{
+			JLabel l = Ui.wrapped(line, Theme.small(), Theme.EMBER, TEXT);
+			l.setBorder(new EmptyBorder(4, 0, 0, 0));
+			l.setAlignmentX(0f);
+			body.add(l);
+		}
 		card.add(body, BorderLayout.CENTER);
 		return card;
 	}
@@ -321,6 +342,13 @@ final class WardView
 		boolean prayerLow = s.getMaxPrayer() > 1 && s.getPrayer() * 4 < s.getMaxPrayer();
 		rows.add(Rows.fact(r.getPrayerDoses() > 0 ? Mark.Kind.GOOD : prayerLow && exposed ? Mark.Kind.WARN : Mark.Kind.NONE, "Prayer",
 			s.getPrayer() + "/" + s.getMaxPrayer() + (r.getPrayerDoses() > 0 ? "  ·  " + r.getPrayerDoses() + " doses" : ""), null));
+
+		if (s.getLag() != com.codex.guardian.core.Lag.State.STEADY)
+		{
+			boolean frozen = s.getLag() == com.codex.guardian.core.Lag.State.FROZEN;
+			rows.add(Rows.fact(frozen ? Mark.Kind.BAD : Mark.Kind.WARN, "Connection", s.getLagText(),
+				frozen ? Theme.BLOOD : Theme.EMBER));
+		}
 
 		Situation.Toxin toxin = s.getToxin();
 		int cures = r.getAntipoisonDoses() + r.getAntivenomDoses();

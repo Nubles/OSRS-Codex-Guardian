@@ -127,6 +127,24 @@ public final class TripCheck
 		return lines;
 	}
 
+	/**
+	 * The same check with what the account has lived through at the destination added as notes, such as "Vorkath
+	 * hit you for 58 here". Notes never make a trip look unready; they are there to be remembered at the bank.
+	 */
+	public TripCheck withMemory(List<String> memory)
+	{
+		if (memory == null || memory.isEmpty())
+		{
+			return this;
+		}
+		List<Line> more = new ArrayList<>(lines);
+		for (String text : memory)
+		{
+			more.add(new Line(Peril.Tone.NOTE, text));
+		}
+		return new TripCheck(destination, kit, more);
+	}
+
 	/** The worst lines first, at most {@code n}: what a short plaque has room for. */
 	public List<Line> worst(int n)
 	{

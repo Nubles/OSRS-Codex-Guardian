@@ -40,6 +40,8 @@ public final class Situation
 	private final Readiness readiness;
 	private final int tilesToReach;
 	private final int tilesToDitch;
+	private final Lag.State lag;
+	private final String lagText;
 
 	private Situation(Builder b)
 	{
@@ -65,6 +67,8 @@ public final class Situation
 		readiness = b.readiness;
 		tilesToReach = b.tilesToReach;
 		tilesToDitch = b.tilesToDitch;
+		lag = b.lag;
+		lagText = b.lagText;
 	}
 
 	public static Situation loggedOut()
@@ -203,6 +207,43 @@ public final class Situation
 		return tilesToDitch;
 	}
 
+	/** How steadily game ticks are arriving; see {@link Lag}. */
+	public Lag.State getLag()
+	{
+		return lag;
+	}
+
+	/** The lag in a few words, such as "3 late ticks"; "Steady" when there is none. */
+	public String getLagText()
+	{
+		return lagText;
+	}
+
+	/**
+	 * What the attackers on you have hit you for before, as one figure: the hardest hitter's best, plus the next
+	 * hardest's when two are on you in multi-combat, since two hits can land on one tick there. In single-way combat
+	 * only one can be attacking you at a time. 0 when none of them has hit you before.
+	 */
+	public int rememberedWorst()
+	{
+		int first = 0;
+		int second = 0;
+		for (Threat t : attackers)
+		{
+			int max = t.getKnownMax();
+			if (max > first)
+			{
+				second = first;
+				first = max;
+			}
+			else if (max > second)
+			{
+				second = max;
+			}
+		}
+		return multiCombat ? first + second : first;
+	}
+
 	public Risk risk()
 	{
 		return zone == null ? Risk.LOW : zone.getRisk();
@@ -228,7 +269,8 @@ public final class Situation
 			&& teleblocked == s.teleblocked && tilesToReach == s.tilesToReach && tilesToDitch == s.tilesToDitch
 			&& Double.compare(damagePerTick, s.damagePerTick) == 0 && recentMaxHit == s.recentMaxHit
 			&& Objects.equals(playerName, s.playerName) && Objects.equals(mode, s.mode) && toxin == s.toxin
-			&& Objects.equals(zone, s.zone) && attackers.equals(s.attackers) && Objects.equals(readiness, s.readiness);
+			&& Objects.equals(zone, s.zone) && attackers.equals(s.attackers) && Objects.equals(readiness, s.readiness)
+			&& lag == s.lag && Objects.equals(lagText, s.lagText);
 	}
 
 	@Override
@@ -236,7 +278,7 @@ public final class Situation
 	{
 		return Objects.hash(loggedIn, playerName, mode, oneLife, world, combatLevel, hitpoints, maxHitpoints, prayer,
 			maxPrayer, toxin, zone, wildernessLevel, nearWilderness, multiCombat, teleblocked, attackers, damagePerTick, recentMaxHit,
-			readiness, tilesToReach, tilesToDitch);
+			readiness, tilesToReach, tilesToDitch, lag, lagText);
 	}
 
 	public static final class Builder
@@ -263,6 +305,8 @@ public final class Situation
 		private double damagePerTick;
 		private int recentMaxHit;
 		private Readiness readiness = Readiness.empty();
+		private Lag.State lag = Lag.State.STEADY;
+		private String lagText = "Steady";
 
 		public Builder loggedIn(boolean value)
 		{
@@ -364,6 +408,13 @@ public final class Situation
 		public Builder readiness(Readiness value)
 		{
 			readiness = value;
+			return this;
+		}
+
+		public Builder lag(Lag.State state, String text)
+		{
+			lag = state == null ? Lag.State.STEADY : state;
+			lagText = text == null ? "Steady" : text;
 			return this;
 		}
 

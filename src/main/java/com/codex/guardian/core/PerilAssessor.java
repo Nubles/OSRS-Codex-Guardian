@@ -56,6 +56,15 @@ public final class PerilAssessor
 				? add(reasons, Peril.Topic.VITALS, "One more hit of " + worst + " could end the run", Peril.Tone.BAD, 30)
 				: add(reasons, Peril.Topic.VITALS, "Eat up: a hit of " + worst + " would end the run", Peril.Tone.WARN, 10);
 		}
+		// What the monsters on you have hit you for before: known before the first hit of this fight lands. Only
+		// attackers carry a remembered hit, so this is always under fire.
+		int remembered = s.rememberedWorst();
+		boolean rememberedLethal = remembered > 0 && s.getHitpoints() <= remembered && !oneHitAway;
+		if (rememberedLethal)
+		{
+			score += add(reasons, Peril.Topic.VITALS, rememberedText(s, remembered),
+				Peril.Tone.BAD, 30);
+		}
 		int secondsLeft = -1;
 		double ticksLeft = Double.POSITIVE_INFINITY;
 		if (s.getDamagePerTick() > 0)
@@ -139,6 +148,15 @@ public final class PerilAssessor
 			score += add(reasons, Peril.Topic.THREAT, "Multi-combat: more can join in", Peril.Tone.NOTE, 4);
 		}
 
+		// Lag: a late tick makes every eat and teleport late too. Only worth a word where something can hurt you.
+		Lag.State lag = s.getLag();
+		if (lag != Lag.State.STEADY && (underFire || risk.atLeast(Risk.HIGH) || wild > 0) && risk != Risk.SAFE)
+		{
+			score += lag == Lag.State.FROZEN
+				? add(reasons, Peril.Topic.LINK, "The game froze: " + s.getLagText().toLowerCase(), Peril.Tone.BAD, 18)
+				: add(reasons, Peril.Topic.LINK, "Lagging: " + s.getLagText(), Peril.Tone.WARN, 12);
+		}
+
 		// Poison and venom.
 		Readiness r = s.getReadiness();
 		if (s.getToxin() == Situation.Toxin.VENOM)
@@ -197,13 +215,33 @@ public final class PerilAssessor
 		// Any of these is a death that can happen in the next few ticks, so it is always the top
 		// level whatever else is true: critically low under fire, one hit from dead under fire, or
 		// a pace of damage that empties your hitpoints in seconds.
-		boolean lethal = underFire && (hp <= 0.2 || oneHitAway) || ticksLeft < LETHAL_PACE_TICKS;
+		boolean lethal = underFire && (hp <= 0.2 || oneHitAway || rememberedLethal) || ticksLeft < LETHAL_PACE_TICKS;
 		if (risk != Risk.SAFE && lethal)
 		{
 			level = Peril.Level.PERIL;
 			score = Math.max(score, 65);
 		}
 		return new Peril(level, score, reasons, secondsLeft);
+	}
+
+	/** "Black demon has hit you for 16", or "Two on you have hit for 16 + 14" when the figure is a pair. */
+	static String rememberedText(Situation s, int remembered)
+	{
+		Threat first = null;
+		for (Threat t : s.getAttackers())
+		{
+			if (t.getKnownMax() > 0 && (first == null || t.getKnownMax() > first.getKnownMax()))
+			{
+				first = t;
+			}
+		}
+		if (first == null)
+		{
+			return "Hit for " + remembered + " before: one hit could end the run";
+		}
+		int rest = remembered - first.getKnownMax();
+		return rest > 0 ? "Together they have hit for " + remembered + ": one tick could end the run"
+			: first.getName() + " has hit you for " + first.getKnownMax() + ": one hit could end the run";
 	}
 
 	private static int add(List<Peril.Reason> reasons, Peril.Topic topic, String text, Peril.Tone tone, int weight)

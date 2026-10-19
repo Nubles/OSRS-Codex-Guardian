@@ -28,7 +28,9 @@ public final class Advice
 		int walkTo = r.getEscapeReach();
 		if (p.getLevel() == Peril.Level.PERIL)
 		{
-			boolean oneHit = s.getRecentMaxHit() > 0 && s.getHitpoints() <= s.getRecentMaxHit();
+			int remembered = s.rememberedWorst();
+			boolean oneHit = s.getRecentMaxHit() > 0 && s.getHitpoints() <= s.getRecentMaxHit()
+				|| remembered > 0 && s.getHitpoints() <= remembered;
 			if (escape && (oneHit || !food))
 			{
 				return "Teleport out now: " + way;
@@ -57,6 +59,11 @@ public final class Advice
 					: "Run south now";
 			}
 			return s.isTeleblocked() ? "Run: teleblocked, no food" : "Run: no food, no teleport";
+		}
+		// Lag in danger: every input lands late, so the way out is worth taking while it still works.
+		if (s.getLag() != Lag.State.STEADY && escape)
+		{
+			return "Lagging: teleport out";
 		}
 		if (wild > 0 && !escape && walkBack)
 		{

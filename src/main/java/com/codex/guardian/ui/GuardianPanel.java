@@ -1,7 +1,9 @@
 package com.codex.guardian.ui;
 
+import com.codex.guardian.core.HitMemory;
 import com.codex.guardian.core.Journal;
 import com.codex.guardian.core.Peril;
+import com.codex.guardian.core.PlaceMemory;
 import com.codex.guardian.core.Situation;
 import com.codex.guardian.core.TripCheck;
 import java.util.function.Consumer;
@@ -42,6 +44,7 @@ public class GuardianPanel extends PluginPanel
 	private Situation situation = Situation.loggedOut();
 	private Peril peril = Peril.calm();
 	private Journal journal;
+	private HitMemory hits;
 	private TripCheck trip;
 	private int foodReserve;
 	private boolean confirming;
@@ -139,7 +142,14 @@ public class GuardianPanel extends PluginPanel
 	/** Called on the Swing thread with a private copy of the journal whenever it changes. */
 	public void updateJournal(Journal journal)
 	{
+		updateJournal(journal, hits);
+	}
+
+	/** Called on the Swing thread with private copies of the journal and the hit memory whenever they change. */
+	public void updateJournal(Journal journal, HitMemory hits)
+	{
 		this.journal = journal;
+		this.hits = hits;
 		crest.update(situation, peril, journal);
 		rebuildJournal();
 	}
@@ -167,13 +177,14 @@ public class GuardianPanel extends PluginPanel
 	private void rebuildWard()
 	{
 		wardStale = false;
-		replace(ward, WardView.build(situation, peril, gauge, foodReserve, trip));
+		replace(ward, WardView.build(situation, peril, gauge, foodReserve, trip,
+			PlaceMemory.lines(journal, hits, PlaceMemory.placeOf(situation))));
 	}
 
 	private void rebuildJournal()
 	{
 		replace(journalView, JournalView.build(journal, situation, System.currentTimeMillis(), newRunButton(), oneLifeButton()));
-		replace(perils, PerilsView.build(journal));
+		replace(perils, PerilsView.build(journal, hits));
 	}
 
 	/** The per-account one-life switch, or null for a hardcore account, which is one-life by its nature. */
