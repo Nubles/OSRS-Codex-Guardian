@@ -74,6 +74,21 @@ public final class Advice
 		return null;
 	}
 
+	/**
+	 * The walk that makes a teleport work again, for a plaque line. Teleblocked, no teleport works at any
+	 * level, so walking down to its reach would only waste the walk: the line points out of the Wilderness.
+	 */
+	public static String walkLine(Situation s)
+	{
+		if (s.isTeleblocked())
+		{
+			int toDitch = s.getTilesToDitch();
+			return toDitch > 0 ? "Run " + toDitch + " tiles south" : "Leave the Wilderness";
+		}
+		int toReach = s.getTilesToReach();
+		return toReach > 0 ? "Walk " + toReach + " tiles south" : "Walk south to level " + Math.max(0, s.getReadiness().getEscapeReach());
+	}
+
 	/** A short name for a carried teleport, so it fits a plaque line. */
 	public static String shortName(String item)
 	{

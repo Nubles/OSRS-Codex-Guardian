@@ -179,10 +179,14 @@ public final class Zones
 	 * Tiles to walk due south from a Wilderness coordinate until the level is {@code level} or lower, where 0
 	 * means out of the Wilderness altogether. 0 when already there; -1 when the coordinate is not on the
 	 * Wilderness map, so no distance can be promised.
+	 *
+	 * <p>Underground (the Revenant Caves, the Wilderness Slayer Cave and the other dungeons) a level line can
+	 * still be walked to, but there is no ditch to the south: the way out is a ladder or a cave mouth, so the
+	 * distance out of the Wilderness is -1 there.
 	 */
 	public static int tilesSouthTo(int x, int y, int level)
 	{
-		if (wildernessLevel(x, y) <= 0 || level < 0)
+		if (wildernessLevel(x, y) <= 0 || level < 0 || level == 0 && y >= 9920)
 		{
 			return -1;
 		}

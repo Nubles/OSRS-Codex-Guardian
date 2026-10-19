@@ -89,6 +89,8 @@ public class CodexGuardianPlugin extends Plugin
 	/** Codex Quartermaster's saved data, read only, for the kit you packed and what your bank holds. */
 	static final String QUARTERMASTER_GROUP = "codexquartermaster";
 	static final String QUARTERMASTER_KEY = "quarters";
+	/** Quartermaster's kits in the shape it documents for other plugins; preferred, with {@code quarters} beside it. */
+	static final String QUARTERMASTER_KITS_KEY = "kitsV1";
 	/** Last resorts worth pointing out in the bank, by the item ids Quartermaster's bank record uses. */
 	private static final int[][] BANKED_GRACES = {{ItemID.RING_OF_LIFE}, {ItemID.JEWL_NECKLACE_OF_PHOENIX}};
 	private static final String[] BANKED_GRACE_NAMES = {"Ring of life", "Phoenix necklace"};
@@ -344,7 +346,8 @@ public class CodexGuardianPlugin extends Plugin
 	@Subscribe
 	public void onConfigChanged(ConfigChanged event)
 	{
-		if (QUARTERMASTER_GROUP.equals(event.getGroup()) && QUARTERMASTER_KEY.equals(event.getKey()))
+		if (QUARTERMASTER_GROUP.equals(event.getGroup())
+			&& (QUARTERMASTER_KEY.equals(event.getKey()) || QUARTERMASTER_KITS_KEY.equals(event.getKey())))
 		{
 			// Quartermaster saved: the kit may have changed. Read it again on the client thread, where it is used.
 			clientThread.invokeLater(this::readKit);
@@ -978,9 +981,8 @@ public class CodexGuardianPlugin extends Plugin
 				List<WardOverlay.Check> checks = new ArrayList<>();
 				String best = shortName(s.getReadiness().getBestEscape());
 				int reach = Math.max(0, s.getReadiness().getEscapeReach());
-				checks.add(new WardOverlay.Check(Mark.Kind.BAD, best + " stops at level " + reach));
-				int tiles = s.getTilesToReach();
-				checks.add(new WardOverlay.Check(Mark.Kind.WARN, tiles > 0 ? "Walk " + tiles + " tiles south" : "Walk south to level " + reach));
+				checks.add(new WardOverlay.Check(Mark.Kind.BAD, s.isTeleblocked() ? "Teleblocked" : best + " stops at level " + reach));
+				checks.add(new WardOverlay.Check(Mark.Kind.WARN, Advice.walkLine(s)));
 				checks.addAll(kitChecks(s).subList(0, 1));
 				return new WardOverlay.Briefing("LEVEL " + wild, "Past your teleport", "NO ESCAPE", Theme.BLOOD, checks);
 			}
@@ -1097,7 +1099,7 @@ public class CodexGuardianPlugin extends Plugin
 		accountOneLife = oneLife.isOneLife();
 		if (oneLife.shouldSave())
 		{
-			configManager.setConfiguration(CodexGuardianConfig.GROUP, profile, ONE_LIFE_KEY, "true");
+			configManager.setConfiguration(CodexGuardianConfig.GROUP, profile, ONE_LIFE_KEY, String.valueOf(accountOneLife));
 		}
 		readKit();
 		journalChanged = true;
@@ -1143,17 +1145,15 @@ public class CodexGuardianPlugin extends Plugin
 		KitPlan plan = null;
 		if (profile != null)
 		{
-			String json = configManager.getConfiguration(QUARTERMASTER_GROUP, profile, QUARTERMASTER_KEY);
-			if (json != null && !json.isEmpty())
+			JsonObject kits = readJson(configManager.getConfiguration(QUARTERMASTER_GROUP, profile, QUARTERMASTER_KITS_KEY));
+			JsonObject quarters = readJson(configManager.getConfiguration(QUARTERMASTER_GROUP, profile, QUARTERMASTER_KEY));
+			try
 			{
-				try
-				{
-					plan = KitPlan.from(gson.fromJson(json, JsonObject.class));
-				}
-				catch (RuntimeException e)
-				{
-					plan = null;
-				}
+				plan = KitPlan.from(kits, quarters);
+			}
+			catch (RuntimeException e)
+			{
+				plan = null;
 			}
 		}
 		kitPlan = plan;
@@ -1188,6 +1188,23 @@ public class CodexGuardianPlugin extends Plugin
 			}
 		}
 		tripDirty = true;
+	}
+
+	/** Another plugin's saved JSON object, or null when it is missing or not an object. */
+	private JsonObject readJson(String json)
+	{
+		if (json == null || json.isEmpty())
+		{
+			return null;
+		}
+		try
+		{
+			return gson.fromJson(json, JsonObject.class);
+		}
+		catch (RuntimeException e)
+		{
+			return null;
+		}
 	}
 
 	/** Counts the last resorts in the bank while it is open; this beats Quartermaster's older record. */

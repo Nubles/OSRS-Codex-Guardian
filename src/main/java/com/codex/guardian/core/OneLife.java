@@ -8,6 +8,8 @@ package com.codex.guardian.core;
  * <p>Earlier versions kept one setting for every account. On upgrade, an account that already has a
  * Guardian journal inherits that old setting once, so a run that was being treated as one-life stays so;
  * an account Guardian has never seen starts as an ordinary account until the player says otherwise.
+ * Whatever is decided on an account's first login under this version is saved as its own choice at once:
+ * left unsaved, a new account would come back with a journal next time and be swept up by the old setting.
  */
 public final class OneLife
 {
@@ -28,7 +30,7 @@ public final class OneLife
 			return oneLife;
 		}
 
-		/** True when the old global setting was just carried over and should be stored for the account. */
+		/** True when the account had no choice of its own yet, so this one should be stored for it now. */
 		public boolean shouldSave()
 		{
 			return save;
@@ -51,10 +53,6 @@ public final class OneLife
 		{
 			return new Decision(Boolean.parseBoolean(saved), false);
 		}
-		if (legacyGlobal && hadJournal)
-		{
-			return new Decision(true, true);
-		}
-		return new Decision(false, false);
+		return new Decision(legacyGlobal && hadJournal, true);
 	}
 }

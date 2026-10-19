@@ -63,6 +63,85 @@ public class TripAndAccountTest
 	}
 
 	@Test
+	public void aNewAccountKeepsItsOwnChoiceOnceItHasAJournal()
+	{
+		// First login of a new account while the old shared setting is on: ordinary, and saved as such at once...
+		OneLife.Decision first = OneLife.resolve(null, true, false);
+		assertFalse(first.isOneLife());
+		assertTrue(first.shouldSave());
+		// ...so the next login, now with a journal, reads its own "false" instead of inheriting the old setting.
+		assertFalse(OneLife.resolve(String.valueOf(first.isOneLife()), true, true).isOneLife());
+		// Without that save the account would have been swept up on its second login.
+		assertTrue(OneLife.resolve(null, true, true).isOneLife());
+	}
+
+	private static JsonObject resource(String name)
+	{
+		try (java.io.InputStream in = TripAndAccountTest.class.getResourceAsStream(name))
+		{
+			return GSON.fromJson(new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8), JsonObject.class);
+		}
+		catch (java.io.IOException e)
+		{
+			throw new AssertionError(e);
+		}
+	}
+
+	/**
+	 * The two entries exactly as Codex Quartermaster writes them (generated from its own Quarters and KitBook
+	 * with its injected-Gson defaults): a saved "Zulrah trip" kit with two rings of life banked, and a fresh install.
+	 */
+	@Test
+	public void quartermasterKitBookIsPreferredAndItsBankComesFromQuarters()
+	{
+		KitPlan both = KitPlan.from(resource("qm-kits1.json"), resource("qm-quarters1.json"));
+		assertEquals("Zulrah trip", both.getName());
+		assertEquals(2, both.inBank(2570));
+		List<String> supplies = new ArrayList<>();
+		for (KitPlan.Need n : both.getNeeds())
+		{
+			supplies.add(n.getSupply() + "=" + n.getPerTrip());
+		}
+		assertEquals("[FOOD=240, PRAYER=16, item:2550=0, ANTIVENOM=4]", supplies.toString());
+		assertEquals(2550, both.getNeeds().get(2).getItemId());
+		assertEquals("Zulrah", TripCheck.destinationFor(both.getName()).getName());
+
+		// Either entry alone still gives the kit: kitsV1 has no bank, quarters has the same kit.
+		KitPlan bookOnly = KitPlan.from(resource("qm-kits1.json"), null);
+		assertEquals("Zulrah trip", bookOnly.getName());
+		assertEquals(4, bookOnly.getNeeds().size());
+		assertFalse(bookOnly.hasBank());
+		KitPlan quartersOnly = KitPlan.from(null, resource("qm-quarters1.json"));
+		assertEquals("Zulrah trip", quartersOnly.getName());
+		assertEquals(2, quartersOnly.inBank(2570));
+	}
+
+	@Test
+	public void aFreshQuartermasterInstallIsNotATripToVorkath()
+	{
+		JsonObject book = resource("qm-kits0.json");
+		JsonObject quarters = resource("qm-quarters0.json");
+		// Quartermaster names its first preset active although nobody chose it.
+		assertEquals("preset:vorkath", book.get("active").getAsString());
+		assertFalse(quarters.has("active"));
+		KitPlan fresh = KitPlan.from(book, quarters);
+		assertNull(fresh.getName());
+		assertNull(TripCheck.destinationFor(fresh.getName()));
+		TripCheck check = TripCheck.build(TripCheck.destinationFor(fresh.getName()), fresh, Collections.emptyMap(),
+			items("Shark", 10), items(), Supplies.assess(items("Shark", 10), items(), 99, false), Collections.emptyMap(), 80);
+		// No destination and no kit: the bank-close briefing stays quiet.
+		assertNull(check.getDestination());
+		assertNull(check.getKit());
+
+		// Once the player picks the Zulrah preset, its name comes from kitsV1, but a preset sets no targets.
+		quarters.addProperty("active", "preset:zulrah");
+		book.addProperty("active", "preset:zulrah");
+		KitPlan chosen = KitPlan.from(book, quarters);
+		assertEquals("Zulrah", chosen.getName());
+		assertTrue(chosen.getNeeds().isEmpty());
+	}
+
+	@Test
 	public void quartermasterKitIsReadOnlyWhenTheChoiceIsTheirs()
 	{
 		KitPlan saved = plan("{\"active\":\"kit:2\",\"bank\":{\"2570\":3,\"oops\":1},\"kits\":["
@@ -181,6 +260,9 @@ public class TripAndAccountTest
 		// Underground mirrors the surface; off the map there is no promise.
 		assertEquals(5, Zones.tilesSouthTo(3200, 9920 + 20 * 8 + 4, 20));
 		assertEquals(-1, Zones.tilesSouthTo(3200, 3400, 0));
+		// Underground there is no ditch to walk to: out of the Revenant Caves is a cave mouth, not south.
+		assertEquals(25, Zones.wildernessLevel(3200, 9920 + 24 * 8));
+		assertEquals(-1, Zones.tilesSouthTo(3200, 9920 + 24 * 8, 0));
 	}
 
 	@Test
@@ -203,5 +285,11 @@ public class TripAndAccountTest
 		Peril p = new PerilAssessor(80).assess(blocked);
 		assertEquals(Peril.Level.PERIL, p.getLevel());
 		assertEquals("Run 196 tiles south", Advice.now(blocked, p));
+		// The past-your-teleport plaque does not send a teleblocked player down to level 20 for nothing.
+		assertEquals("Run 196 tiles south", Advice.walkLine(blocked));
+		assertEquals("Walk 36 tiles south", Advice.walkLine(calm));
+		Situation cave = new Situation.Builder().loggedIn(true).zone(Zones.wilderness(25)).wilderness(25, false).teleblocked(true)
+			.readiness(tab).distances(36, -1).build();
+		assertEquals("Leave the Wilderness", Advice.walkLine(cave));
 	}
 }
