@@ -22,6 +22,10 @@ It is the second plugin in the **Codex** suite, after [Codex Navigator](https://
 - **Perils.** Close calls, the lowest you have been, the biggest hit taken, time spent in danger, and a ranking of what has dealt you the most damage and where it got close.
 
 <p align="center">
+  <img src="docs/screenshots/8-before-you-go.png" width="225" alt="Before you go">
+</p>
+
+<p align="center">
   <img src="docs/screenshots/5-briefing.png" width="200" alt="Entry briefing">
   <img src="docs/screenshots/6-plaque-peril.png" width="200" alt="Plaque in peril">
   <img src="docs/screenshots/7-plaque-limit.png" width="200" alt="Past your teleport's reach">
