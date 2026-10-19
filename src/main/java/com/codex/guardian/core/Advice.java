@@ -54,6 +54,11 @@ public final class Advice
 				}
 				if (walkBack)
 				{
+					if (s.cannotRun() && r.getEnergyDoses() > 0)
+					{
+						// The plaque has room for one short line; the Ward's place card carries the tile count.
+						return "Eat, sip energy, run south";
+					}
 					return toReach > 0 ? "Eat, walk " + toReach + " tiles south" : "Eat, walk south to level " + walkTo;
 				}
 				return s.cannotRun() && r.getEnergyDoses() > 0 ? "Eat, sip energy, run south" : "Eat, and run south";
@@ -63,7 +68,7 @@ public final class Advice
 				String run = walkBack && toReach > 0 ? "Run " + toReach + " tiles south" : toDitch > 0 ? "Run " + toDitch + " tiles south"
 					: "Run south now";
 				// Out of energy, the run is a walk: a sip first is what makes it a run again.
-				return s.cannotRun() && r.getEnergyDoses() > 0 ? "Sip energy, r" + run.substring(1) : run;
+				return s.cannotRun() && r.getEnergyDoses() > 0 ? "Sip energy, run south now" : run;
 			}
 			return s.isTeleblocked() ? "Run: teleblocked, no food" : "Run: no food, no teleport";
 		}

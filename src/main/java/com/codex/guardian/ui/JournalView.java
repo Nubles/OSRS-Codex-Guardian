@@ -86,7 +86,8 @@ final class JournalView
 		text.setLayout(new BoxLayout(text, BoxLayout.Y_AXIS));
 		boolean hardcore = toggle == null;
 		text.add(Ui.label(s.isOneLife() ? "ONE LIFE" : "ORDINARY ACCOUNT", Theme.small(), s.isOneLife() ? Theme.GOLD : Theme.TEXT_MUTED));
-		String line = hardcore ? "Recognised as " + s.getMode()
+		String line = hardcore ? "Hardcore World".equals(s.getMode()) ? "On a Hardcore World. A death ends the run."
+			: "Recognised as " + s.getMode()
 			: s.isOneLife() ? "Marked one-life by you. A death ends the run." : "A death is journaled, not the end of the run.";
 		text.add(Ui.wrapped(line, Theme.small(), Theme.TEXT_MUTED, 190));
 		card.add(text, BorderLayout.CENTER);

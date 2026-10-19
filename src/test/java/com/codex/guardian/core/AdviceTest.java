@@ -91,7 +91,7 @@ public class AdviceTest
 	{
 		// Level 35, no teleport works: running south is the plan, and with 3% energy only a sip makes it a run.
 		Situation.Builder b = fight(20, 25).wilderness(35, false).distances(-1, 120).runEnergy(3);
-		assertEquals("Sip energy, run 120 tiles south", advise(b.readiness(kit("Amulet of glory(4)", "Stamina potion(2)")).build()));
+		assertEquals("Sip energy, run south now", advise(b.readiness(kit("Amulet of glory(4)", "Stamina potion(2)")).build()));
 		assertEquals("Run 120 tiles south", advise(fight(20, 25).wilderness(35, false).distances(-1, 120).runEnergy(3)
 			.readiness(kit("Amulet of glory(4)")).build()));
 		// With energy to spare the run is a run.
