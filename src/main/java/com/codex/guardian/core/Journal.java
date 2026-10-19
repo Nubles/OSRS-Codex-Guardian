@@ -144,7 +144,15 @@ public final class Journal
 	public static SavedJson.Read<Journal> load(com.google.gson.Gson gson, String json)
 	{
 		SavedJson.Read<Journal> read = SavedJson.read(gson, json, Journal.class);
-		return new SavedJson.Read<>(read.getValue() == null ? null : read.getValue().repair(), read.isDamaged());
+		Journal journal = read.getValue();
+		if (journal == null)
+		{
+			return read;
+		}
+		// An entry of a kind this version does not know (from a newer Guardian) reads with no kind and is dropped by
+		// the repair; flagged so the saved text is kept aside rather than lost at the next save.
+		boolean unknown = journal.entries != null && journal.entries.stream().anyMatch(e -> e != null && e.type == null);
+		return new SavedJson.Read<>(journal.repair(), read.isDamaged() || unknown);
 	}
 
 	/**

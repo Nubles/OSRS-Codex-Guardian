@@ -112,6 +112,21 @@ public class DamagedDataTest
 	}
 
 	@Test
+	public void anEntryFromANewerGuardianIsKeptAside()
+	{
+		// A kind of entry this version does not know reads as no kind at all and is dropped; the next save would
+		// lose it for good, so the read says it left something out.
+		JsonObject saved = GSON.toJsonTree(journal()).getAsJsonObject();
+		JsonObject future = new JsonObject();
+		future.addProperty("at", NOW);
+		future.addProperty("type", "SOMETHING_NEWER");
+		saved.getAsJsonArray("entries").add(future);
+		SavedJson.Read<Journal> read = Journal.load(GSON, GSON.toJson(saved));
+		assertTrue(read.isDamaged());
+		assertEquals(journal().getEntries().size(), read.getValue().getEntries().size());
+	}
+
+	@Test
 	public void absurdFiguresAreBroughtBackToSense()
 	{
 		SavedJson.Read<Journal> read = Journal.load(GSON, "{\"runStartedAt\":1,\"playedTicks\":9000000000000000000,"
