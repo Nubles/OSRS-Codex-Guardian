@@ -57,7 +57,8 @@ final class WardView
 		if (showTrip(s, trip))
 		{
 			String where = trip.getDestination() != null ? trip.getDestination() : trip.getKit();
-			stack.add(new SectionHeader("Before you go", where));
+			// A kit can carry any name the player typed; keep it from running into the heading.
+			stack.add(new SectionHeader("Before you go", where.length() > 16 ? where.substring(0, 15).trim() + "…" : where));
 			stack.add(trip(trip));
 		}
 

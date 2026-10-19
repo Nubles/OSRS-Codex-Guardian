@@ -159,6 +159,14 @@ public class TripAndAccountTest
 	}
 
 	@Test
+	public void onlyAFightingPackIsBriefedAtTheBank()
+	{
+		assertFalse(TripCheck.packedForTrip(Supplies.assess(items("Yew logs", 27, "Rune axe", 1), items(), 99, false)));
+		assertTrue(TripCheck.packedForTrip(Supplies.assess(items("Shark", 5), items(), 99, false)));
+		assertTrue(TripCheck.packedForTrip(Supplies.assess(items("Prayer potion(4)", 4), items(), 99, false)));
+	}
+
+	@Test
 	public void distancesSouthMatchTheLevelLines()
 	{
 		// Level 26 starts 200 tiles north of the ditch; level 20's last row is 159 tiles north of it.

@@ -90,8 +90,8 @@ public class CodexGuardianPlugin extends Plugin
 	static final String QUARTERMASTER_GROUP = "codexquartermaster";
 	static final String QUARTERMASTER_KEY = "quarters";
 	/** Last resorts worth pointing out in the bank, by the item ids Quartermaster's bank record uses. */
-	private static final int[][] BANKED_GRACES = {{ItemID.RING_OF_LIFE}, {ItemID.JEWL_NECKLACE_OF_PHOENIX}, {ItemID.TOB_TELEPORT}};
-	private static final String[] BANKED_GRACE_NAMES = {"Ring of life", "Phoenix necklace", "Escape crystal"};
+	private static final int[][] BANKED_GRACES = {{ItemID.RING_OF_LIFE}, {ItemID.JEWL_NECKLACE_OF_PHOENIX}};
+	private static final String[] BANKED_GRACE_NAMES = {"Ring of life", "Phoenix necklace"};
 	/** Save the journal about once a minute while playing, and at every important moment. */
 	private static final int SAVE_TICKS = 100;
 	/** The journal's run time and danger time tick constantly; send the panel a fresh copy every half minute. */
@@ -158,6 +158,8 @@ public class CodexGuardianPlugin extends Plugin
 	private List<Supplies.Item> lastWorn = Collections.emptyList();
 	private TripCheck trip;
 	private boolean tripDirty = true;
+	/** The bank just closed; brief the trip check on the next tick if the pack looks like a fight. */
+	private boolean tripBriefPending;
 	private int ticksSinceSave;
 	private int ticksSincePublish;
 
@@ -263,6 +265,7 @@ public class CodexGuardianPlugin extends Plugin
 		settled = false;
 		trip = null;
 		tripDirty = true;
+		tripBriefPending = false;
 	}
 
 	/** Forgets everything read for the previous account: its one-life choice, its kit and its bank. */
@@ -383,11 +386,12 @@ public class CodexGuardianPlugin extends Plugin
 	public void onWidgetClosed(WidgetClosed event)
 	{
 		// Walking away from the bank is the last moment to fix a pack: brief the trip check there.
+		// Decided on the next tick, once the pack read includes whatever was withdrawn on the way out.
 		if (event.getGroupId() == InterfaceID.BANKMAIN && event.isUnload() && settled && config.briefings()
 			&& client.getGameState() == GameState.LOGGED_IN)
 		{
 			tripDirty = true;
-			brief(Briefing.TRIP, null);
+			tripBriefPending = true;
 		}
 	}
 
@@ -465,6 +469,15 @@ public class CodexGuardianPlugin extends Plugin
 
 		Situation s = read(local);
 		updateTrip();
+		if (tripBriefPending)
+		{
+			tripBriefPending = false;
+			// Only a pack that looks like a fight is briefed: a skiller banking logs is not told about Vorkath.
+			if (TripCheck.packedForTrip(readiness))
+			{
+				brief(Briefing.TRIP, null);
+			}
+		}
 		Peril p = assessor.assess(s);
 		situation = s;
 		peril = p;

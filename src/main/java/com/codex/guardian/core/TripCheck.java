@@ -163,6 +163,16 @@ public final class TripCheck
 		}
 	}
 
+	/**
+	 * Whether a pack looks like one for a fight: food, prayer or a cure. Closing the bank with one of these is
+	 * worth a briefing; closing it with a skilling inventory is not. Readiness is read when the pack changes,
+	 * which the bank's own withdrawals do, so it is current when the bank closes.
+	 */
+	public static boolean packedForTrip(Readiness r)
+	{
+		return r.getFoodCount() > 0 || r.getPrayerDoses() > 0 || r.getAntivenomDoses() > 0 || r.getAntipoisonDoses() > 0;
+	}
+
 	/** The place a kit is named for, such as "Vorkath" for a Vorkath kit or "Barrows crypts" for "Barrows". */
 	public static Zone destinationFor(String kitName)
 	{
@@ -249,7 +259,7 @@ public final class TripCheck
 			int count = 0;
 			for (Map.Entry<String, Integer> e : bankGraces.entrySet())
 			{
-				if (e.getValue() != null && e.getValue() > 0 && !"Escape crystal".equals(e.getKey()))
+				if (e.getValue() != null && e.getValue() > 0)
 				{
 					banked = e.getKey();
 					count = e.getValue();
