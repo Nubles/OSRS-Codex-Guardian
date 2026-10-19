@@ -136,7 +136,7 @@ public final class PrayerWatch
 		return seconds / step * step;
 	}
 
-	/** "45s", "3m", "1h 5m": short, for a ledger row. */
+	/** "45s", "3m", "1h 5m": short, for a ledger row. Minutes are rounded down, so it never reads longer than it is. */
 	public static String describe(int seconds)
 	{
 		if (seconds < 0)
@@ -147,7 +147,7 @@ public final class PrayerWatch
 		{
 			return seconds + "s";
 		}
-		int minutes = (int) Math.round(seconds / 60.0);
+		int minutes = seconds / 60;
 		return minutes < 60 ? minutes + "m" : minutes / 60 + "h " + minutes % 60 + "m";
 	}
 }

@@ -93,7 +93,10 @@ public class PrayerWatchTest
 		assertEquals(90, PrayerWatch.rounded(119));
 		assertEquals(660, PrayerWatch.rounded(700));
 		assertEquals("45s", PrayerWatch.describe(45));
-		assertEquals("2m", PrayerWatch.describe(119));
+		// What the panel actually gets after rounding: 90s is a minute and a half, never "2m".
+		assertEquals("1m", PrayerWatch.describe(PrayerWatch.rounded(119)));
+		assertEquals("2m", PrayerWatch.describe(150));
+		assertEquals("9m", PrayerWatch.describe(599));
 		assertEquals("1h 10m", PrayerWatch.describe(4_200));
 	}
 
