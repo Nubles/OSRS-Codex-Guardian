@@ -59,7 +59,8 @@ public final class Zone
 			case RAID:
 				return "Raid";
 			case SAFE_MINIGAME:
-				return "Safe minigame";
+				// On a Hardcore World the safe rule is not relied on, so the label stops promising it.
+				return risk == Risk.SAFE ? "Safe minigame" : "Minigame";
 			case PVP_WORLD:
 				return "PvP world";
 			default:

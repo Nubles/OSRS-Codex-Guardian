@@ -17,9 +17,17 @@ public final class Zones
 	private static final String SLAYER = "Aggressive monsters can stack up here. Watch your hitpoints and keep an escape ready.";
 	private static final String QUIET = "Monsters here can still hit hard if you are underlevelled. Keep some food on you.";
 	private static final String SAFE = "Deaths here are normally safe, but check your mode's rules before you rely on that.";
+	/**
+	 * Hardcore Worlds open on 4 Nov 2026 and Jagex has not said whether a minigame death there still costs nothing.
+	 * Until it can be checked, Guardian fails toward danger: a wrong "safe" costs a run, a wrong "deadly" costs nothing.
+	 */
+	static final String UNCONFIRMED = "Normally a safe death, but Guardian can't confirm that on Hardcore Worlds before "
+		+ "4 Nov, so it treats a death here as the end of the run.";
 	private static final String SKILLING = "A skilling boss. Its damage adds up while you work, so keep food and leave early.";
 
 	private static final Map<Integer, Zone> BY_REGION = new HashMap<>();
+	/** Each safe minigame as it reads on a Hardcore World, by name. */
+	private static final Map<String, Zone> ON_HARDCORE_WORLD = new HashMap<>();
 	private static final Pattern LEVEL_TEXT = Pattern.compile("Level:\\s*(\\d{1,2})");
 
 	static
@@ -101,20 +109,21 @@ public final class Zones
 		dungeon("Slayer Tower", Risk.MEDIUM, SLAYER, 13623, 13723);
 
 		// Minigames where a death is normally safe
-		safe("Fight Caves", 9551);
-		safe("The Inferno", 9043);
-		safe("Fortis Colosseum", 7216);
-		safe("The Gauntlet", 12127, 7512);
-		safe("Corrupted Gauntlet", 7768);
-		safe("Pest Control", 10536);
-		safe("Castle Wars", 9520, 9620);
-		safe("Soul Wars", 8493, 8748, 8749, 9005);
-		safe("Barbarian Assault", 7508, 7509);
-		safe("Nightmare Zone", 9033);
-		safe("Fight Pits", 9552);
-		safe("Emir's Arena", 13362, 13363);
-		safe("Trouble Brewing", 15150);
-		safe("Last Man Standing", 13658, 13659, 13660, 13914, 13915, 13916, 13918, 13919, 13920, 14174, 14175, 14176, 14430, 14431, 14432);
+		// (the second risk is the read on a Hardcore World, where the safe rule can't be confirmed yet)
+		safe("Fight Caves", Risk.HIGH, 9551);
+		safe("The Inferno", Risk.EXTREME, 9043);
+		safe("Fortis Colosseum", Risk.EXTREME, 7216);
+		safe("The Gauntlet", Risk.HIGH, 12127, 7512);
+		safe("Corrupted Gauntlet", Risk.HIGH, 7768);
+		safe("Pest Control", Risk.MEDIUM, 10536);
+		safe("Castle Wars", Risk.MEDIUM, 9520, 9620);
+		safe("Soul Wars", Risk.MEDIUM, 8493, 8748, 8749, 9005);
+		safe("Barbarian Assault", Risk.MEDIUM, 7508, 7509);
+		safe("Nightmare Zone", Risk.MEDIUM, 9033);
+		safe("Fight Pits", Risk.MEDIUM, 9552);
+		safe("Emir's Arena", Risk.MEDIUM, 13362, 13363);
+		safe("Trouble Brewing", Risk.MEDIUM, 15150);
+		safe("Last Man Standing", Risk.MEDIUM, 13658, 13659, 13660, 13914, 13915, 13916, 13918, 13919, 13920, 14174, 14175, 14176, 14430, 14431, 14432);
 	}
 
 	private Zones()
@@ -125,6 +134,26 @@ public final class Zones
 	public static Zone forRegion(int regionId)
 	{
 		return BY_REGION.get(regionId);
+	}
+
+	/**
+	 * The zone as it reads on a Hardcore World. A minigame where a death is normally safe is not taken as safe there
+	 * until the rule can be checked (see {@link #UNCONFIRMED}); every other zone is unchanged.
+	 */
+	public static Zone onHardcoreWorld(Zone zone)
+	{
+		if (zone == null || zone.getKind() != Zone.Kind.SAFE_MINIGAME || zone.getRisk() != Risk.SAFE)
+		{
+			return zone;
+		}
+		Zone unconfirmed = ON_HARDCORE_WORLD.get(zone.getName());
+		return unconfirmed != null ? unconfirmed : new Zone(zone.getName(), Zone.Kind.SAFE_MINIGAME, Risk.MEDIUM, UNCONFIRMED);
+	}
+
+	/** True for a minigame whose safe-death rule Guardian is not relying on, as on a Hardcore World. */
+	public static boolean isUnconfirmedSafe(Zone zone)
+	{
+		return zone != null && zone.getKind() == Zone.Kind.SAFE_MINIGAME && zone.getRisk() != Risk.SAFE;
 	}
 
 	/**
@@ -254,9 +283,10 @@ public final class Zones
 		put(new Zone(name, Zone.Kind.DUNGEON, risk, advice), regions);
 	}
 
-	private static void safe(String name, int... regions)
+	private static void safe(String name, Risk onHardcoreWorld, int... regions)
 	{
 		put(new Zone(name, Zone.Kind.SAFE_MINIGAME, Risk.SAFE, SAFE), regions);
+		ON_HARDCORE_WORLD.put(name, new Zone(name, Zone.Kind.SAFE_MINIGAME, onHardcoreWorld, UNCONFIRMED));
 	}
 
 	private static void put(Zone zone, int... regions)

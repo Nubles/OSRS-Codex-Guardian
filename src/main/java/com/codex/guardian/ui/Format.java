@@ -9,13 +9,13 @@ public final class Format
 	{
 	}
 
-	/** "3h 12m", "45m" or "20s" for a number of game ticks. */
 	/** A run's play time: as {@link #duration}, but "<1m" for its first minute rather than a ticking seconds count. */
 	public static String runTime(long ticks)
 	{
 		return Math.round(ticks * SECONDS_PER_TICK) < 60 ? "<1m" : duration(ticks);
 	}
 
+	/** "3h 12m", "45m" or "20s" for a number of game ticks. */
 	public static String duration(long ticks)
 	{
 		long seconds = Math.round(ticks * SECONDS_PER_TICK);

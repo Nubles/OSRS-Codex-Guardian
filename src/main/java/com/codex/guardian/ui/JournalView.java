@@ -5,10 +5,7 @@ import com.codex.guardian.core.Replay;
 import com.codex.guardian.core.Situation;
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
-import java.text.SimpleDateFormat;
-import java.util.Date;
 import java.util.List;
-import java.util.Locale;
 import javax.swing.BoxLayout;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -25,14 +22,21 @@ final class JournalView
 
 	static StackPanel build(Journal journal, Situation situation, long now, CodexButton newRun, CodexButton oneLifeToggle)
 	{
+		return build(journal, situation, now, newRun, oneLifeToggle, -1);
+	}
+
+	/** @param worth the account's worth from Codex Ledger, or -1 without it; shown on the run's seal */
+	static StackPanel build(Journal journal, Situation situation, long now, CodexButton newRun, CodexButton oneLifeToggle,
+		long worth)
+	{
 		boolean oneLife = situation.isOneLife();
 		StackPanel stack = new StackPanel(6, 8);
 		if (journal == null)
 		{
-			stack.add(Rows.note("Log in to open this account's journal. Each account keeps its own.", 190));
+			stack.add(waiting());
 			return stack;
 		}
-		stack.add(summary(journal, oneLife, newRun));
+		stack.add(summary(journal, oneLife, worth, now, newRun));
 		if (situation.isLoggedIn())
 		{
 			stack.add(mode(situation, oneLifeToggle));
@@ -52,25 +56,35 @@ final class JournalView
 		return stack;
 	}
 
-	private static Card summary(Journal journal, boolean oneLife, CodexButton newRun)
+	/** Logged out: what the journal opens on, so the page is a promise rather than a blank. */
+	private static Card waiting()
 	{
-		boolean fallen = journal.isStatusLost() || oneLife && journal.getDeaths() > 0;
-		Card card = new Card(new BorderLayout(0, 6)).highlighted(true).accent(fallen ? Theme.BLOOD : Theme.TEAL);
+		Card card = new Card(new BorderLayout(0, 4)).highlighted(true);
+		card.setBorder(new EmptyBorder(10, 12, 12, 12));
 		JPanel text = new JPanel();
 		text.setOpaque(false);
 		text.setLayout(new BoxLayout(text, BoxLayout.Y_AXIS));
-		text.add(Ui.label(fallen ? "THE RUN HAS FALLEN" : "THE RUN LIVES", Theme.small(), fallen ? Theme.BLOOD : Theme.GOLD));
-		String began = new SimpleDateFormat("d MMM yyyy", Locale.ENGLISH).format(new Date(journal.getRunStartedAt()));
-		text.add(Ui.label("Begun " + began, Theme.title(), Theme.GOLD_BRIGHT));
-		text.add(Ui.label(Format.runTime(journal.getPlayedTicks()) + " played  ·  " + journal.getCloseCalls()
-			+ (journal.getCloseCalls() == 1 ? " close call" : " close calls"),
-			Theme.small(), Theme.TEXT_MUTED));
+		text.add(Ui.label("THE RUN'S SEAL", Theme.small(), Theme.GOLD));
+		text.add(Ui.wrapped("Log in and the journal opens on this account's seal: a metal earned by every hour on one life, "
+			+ "bronze to dragon, with the close calls that tested it.", Theme.body(), Theme.TEXT, 182));
+		JLabel own = Ui.wrapped("Each account keeps its own journal.", Theme.small(), Theme.TEXT_MUTED, 182);
+		own.setBorder(new EmptyBorder(6, 0, 0, 0));
+		text.add(own);
 		card.add(text, BorderLayout.CENTER);
-		JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+		return card;
+	}
+
+	/** The run's seal, with the one action that belongs to the run as a whole under it. */
+	private static JPanel summary(Journal journal, boolean oneLife, long worth, long now, CodexButton newRun)
+	{
+		JPanel holder = new JPanel(new BorderLayout(0, 4));
+		holder.setOpaque(false);
+		holder.add(new RunSeal(journal, oneLife, worth, now), BorderLayout.CENTER);
+		JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
 		actions.setOpaque(false);
 		actions.add(newRun);
-		card.add(actions, BorderLayout.SOUTH);
-		return card;
+		holder.add(actions, BorderLayout.SOUTH);
+		return holder;
 	}
 
 	/**

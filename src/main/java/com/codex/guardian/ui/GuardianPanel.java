@@ -50,6 +50,8 @@ public class GuardianPanel extends PluginPanel
 	private boolean confirming;
 	private boolean active;
 	private boolean wardStale;
+	private boolean journalStale;
+	private long worth = -1;
 
 	/**
 	 * @param onNewRun  called on the Swing thread once the player confirms a fresh run
@@ -108,7 +110,7 @@ public class GuardianPanel extends PluginPanel
 		this.situation = situation;
 		if (modeChanged)
 		{
-			rebuildJournal();
+			journalChanged();
 		}
 		this.peril = peril;
 		crest.update(situation, peril, journal);
@@ -131,6 +133,10 @@ public class GuardianPanel extends PluginPanel
 		{
 			rebuildWard();
 		}
+		if (journalStale)
+		{
+			rebuildJournal();
+		}
 	}
 
 	@Override
@@ -151,7 +157,30 @@ public class GuardianPanel extends PluginPanel
 		this.journal = journal;
 		this.hits = hits;
 		crest.update(situation, peril, journal);
-		rebuildJournal();
+		journalChanged();
+	}
+
+	/** Called on the Swing thread with the account's worth from Codex Ledger, or -1 when there is none. */
+	public void updateWorth(long worth)
+	{
+		if (this.worth != worth)
+		{
+			this.worth = worth;
+			journalChanged();
+		}
+	}
+
+	/** The journal pages are rebuilt now if they can be seen, otherwise the next time the panel opens. */
+	private void journalChanged()
+	{
+		if (active || isShowing())
+		{
+			rebuildJournal();
+		}
+		else
+		{
+			journalStale = true;
+		}
 	}
 
 	/** Called on the Swing thread with a fresh trip check whenever the pack, the kit or the bank changes. */
@@ -183,7 +212,8 @@ public class GuardianPanel extends PluginPanel
 
 	private void rebuildJournal()
 	{
-		replace(journalView, JournalView.build(journal, situation, System.currentTimeMillis(), newRunButton(), oneLifeButton()));
+		journalStale = false;
+		replace(journalView, JournalView.build(journal, situation, System.currentTimeMillis(), newRunButton(), oneLifeButton(), worth));
 		replace(perils, PerilsView.build(journal, hits));
 	}
 

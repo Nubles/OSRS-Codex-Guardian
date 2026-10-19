@@ -41,7 +41,7 @@ final class PerilsView
 			journal.getCloseCalls() == 0 ? "None yet" : "All survived", Theme.EMBER));
 		int lowest = journal.getLowestHitpoints();
 		tiles.add(new StatTile(lowest < 0 ? "-" : lowest + " hp", "Lowest",
-			lowest < 0 ? "Never been close" : journal.getLowestPlace(), Theme.BLOOD));
+			lowest < 0 ? "Never been close" : shortPlace(journal.getLowestPlace()), Theme.BLOOD));
 		Journal.Hit hit = journal.getBiggestHit();
 		tiles.add(new StatTile(hit == null ? "-" : String.valueOf(hit.getAmount()), "Biggest hit",
 			hit == null ? "Untouched" : hit.getSource(), Theme.GOLD_BRIGHT));
@@ -162,6 +162,12 @@ final class PerilsView
 		card.add(bar, BorderLayout.SOUTH);
 		card.setMaximumSize(new java.awt.Dimension(Integer.MAX_VALUE, card.getPreferredSize().height));
 		return card;
+	}
+
+	/** "Wilderness 31" for "Wilderness level 31": a tile has room for a place, not a sentence. */
+	static String shortPlace(String place)
+	{
+		return place == null ? "" : place.replace("Wilderness level ", "Wilderness ");
 	}
 
 	private static List<Map.Entry<String, Integer>> top(Map<String, Integer> map, int limit)

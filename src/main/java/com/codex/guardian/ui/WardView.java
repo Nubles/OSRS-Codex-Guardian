@@ -164,7 +164,8 @@ final class WardView
 		text.setOpaque(false);
 		text.setLayout(new BoxLayout(text, BoxLayout.Y_AXIS));
 		text.add(centred(Ui.wrapped(peril.headline(), Theme.body(), Theme.TEXT, TEXT - 16)));
-		if (paceShown(peril))
+		// The pace line is for when the headline says something else; never say the same seconds twice.
+		if (paceShown(peril) && !peril.headline().startsWith("At this pace"))
 		{
 			text.add(centred(Ui.label("About " + peril.getSecondsLeft() + "s of hitpoints at this pace", Theme.small(), Theme.BLOOD)));
 		}

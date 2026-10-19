@@ -18,6 +18,7 @@ import com.codex.guardian.core.Supplies;
 import com.codex.guardian.core.Threat;
 import com.codex.guardian.core.PrayerWatch;
 import com.codex.guardian.core.Replay;
+import com.codex.guardian.core.LedgerWorth;
 import com.codex.guardian.core.SharedBank;
 import com.codex.guardian.core.TripCheck;
 import com.codex.guardian.core.Zone;
@@ -215,6 +216,8 @@ public class CodexGuardianPlugin extends Plugin
 	private Peril.Level lastLevel = Peril.Level.CALM;
 	private int perilCooldown;
 	private boolean lowHitpointsNotified;
+	/** The account's worth from Codex Ledger, or -1 when unknown. */
+	private long ledgerWorth = -1;
 	private String lastHitSource;
 	private int accountType = -1;
 	private int lastCombatLevel = -1;
@@ -231,6 +234,8 @@ public class CodexGuardianPlugin extends Plugin
 	protected void startUp()
 	{
 		assessor = new PerilAssessor(config.foodReserve());
+		// A new panel knows no worth yet; forget the last one so the first read is sent to it.
+		ledgerWorth = -1;
 		panel = new GuardianPanel(config.foodReserve(), () -> clientThread.invokeLater(this::newRun),
 			value -> clientThread.invokeLater(() -> setOneLife(value)));
 		navButton = NavigationButton.builder()
@@ -317,6 +322,7 @@ public class CodexGuardianPlugin extends Plugin
 		bankNames.clear();
 		trip = null;
 		tripDirty = true;
+		publishWorth(-1);
 	}
 
 	@Subscribe
@@ -393,6 +399,12 @@ public class CodexGuardianPlugin extends Plugin
 		{
 			// Quartermaster saved: the kit may have changed. Read it again on the client thread, where it is used.
 			clientThread.invokeLater(this::readKit);
+			return;
+		}
+		if (LedgerWorth.GROUP.equals(event.getGroup()) && LedgerWorth.KEY.equals(event.getKey()))
+		{
+			// Codex Ledger saved: the run's seal shows what a death would put at stake.
+			clientThread.invokeLater(this::readWorth);
 			return;
 		}
 		if (SharedBank.GROUP.equals(event.getGroup()) && SharedBank.KEY.equals(event.getKey()))
@@ -595,7 +607,8 @@ public class CodexGuardianPlugin extends Plugin
 		int type = client.getVarbitValue(VarbitID.IRONMAN);
 		boolean hardcore = type == 3 || type == 5;
 		String mode = modeName(type);
-		if (!hardcore && OneLife.hardcoreWorld(client.getWorldType()))
+		boolean hardcoreWorld = OneLife.hardcoreWorld(client.getWorldType());
+		if (!hardcore && hardcoreWorld)
 		{
 			// On a Hardcore World every account has one life, whatever it was marked in the panel.
 			b.mode("Hardcore World", true);
@@ -616,6 +629,11 @@ public class CodexGuardianPlugin extends Plugin
 		boolean inWilderness = client.getVarbitValue(VarbitID.INSIDE_WILDERNESS) == 1;
 		int wild = inWilderness ? wildernessLevel(where) : 0;
 		Zone zone = where == null ? null : Zones.forRegion(where.getRegionID());
+		if (hardcoreWorld)
+		{
+			// Whether a minigame death is still free on Hardcore Worlds can't be checked before they open: not safe.
+			zone = Zones.onHardcoreWorld(zone);
+		}
 		if (wild > 0)
 		{
 			Zone wilderness = Zones.wilderness(wild);
@@ -1161,6 +1179,10 @@ public class CodexGuardianPlugin extends Plugin
 				else
 				{
 					checks = new ArrayList<>(kitChecks(s));
+					if (Zones.isUnconfirmedSafe(zone))
+					{
+						checks.add(0, new WardOverlay.Check(Mark.Kind.WARN, "Safe death unconfirmed here"));
+					}
 					// A place you nearly died at gets a reminder at its door: the first thing remembered there.
 					List<String> memory = PlaceMemory.lines(journal, hits, PlaceMemory.placeOf(s));
 					if (!memory.isEmpty())
@@ -1271,6 +1293,7 @@ public class CodexGuardianPlugin extends Plugin
 			configManager.setConfiguration(CodexGuardianConfig.GROUP, profile, ONE_LIFE_KEY, String.valueOf(accountOneLife));
 		}
 		readKit();
+		readWorth();
 		journalChanged = true;
 		if (loaded == null)
 		{
@@ -1384,6 +1407,31 @@ public class CodexGuardianPlugin extends Plugin
 			}
 		}
 		tripDirty = true;
+	}
+
+	/**
+	 * Reads the account's worth from Codex Ledger for the run's seal. Only when Ledger saves or the profile changes,
+	 * never per tick; without Ledger it stays unknown and the seal shows the biggest hit instead.
+	 */
+	private void readWorth()
+	{
+		String profile = configManager.getRSProfileKey();
+		publishWorth(profile == null ? -1
+			: LedgerWorth.read(gson, configManager.getConfiguration(LedgerWorth.GROUP, profile, LedgerWorth.KEY)));
+	}
+
+	private void publishWorth(long worth)
+	{
+		if (worth == ledgerWorth)
+		{
+			return;
+		}
+		ledgerWorth = worth;
+		GuardianPanel target = panel;
+		if (target != null)
+		{
+			SwingUtilities.invokeLater(() -> target.updateWorth(worth));
+		}
 	}
 
 	/**
