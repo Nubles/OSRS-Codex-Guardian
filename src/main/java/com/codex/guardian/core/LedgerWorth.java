@@ -47,31 +47,38 @@ public final class LedgerWorth
 		}
 	}
 
-	/** "12.4M", "830K", "950 gp": short enough for one column of the seal. Rounded down, so never "1000K". */
+	/**
+	 * "830k", "12.4M", "1.23B", "950 gp": short enough for one column of the seal, by the suite's one rule (whole
+	 * thousands below a million, millions to one decimal, billions to two). Rounded down, so never "1000k".
+	 */
 	public static String shortCoins(long coins)
 	{
 		if (coins >= 1_000_000_000L)
 		{
-			return trim(coins / 1e9) + "B";
-		}
-		if (coins >= 10_000_000L)
-		{
-			return coins / 1_000_000L + "M";
+			return fixed(coins, 1_000_000_000L, 2) + "B";
 		}
 		if (coins >= 1_000_000L)
 		{
-			return trim(coins / 1e6) + "M";
+			return fixed(coins, 1_000_000L, 1) + "M";
 		}
 		if (coins >= 1_000L)
 		{
-			return coins / 1_000L + "K";
+			return coins / 1_000L + "k";
 		}
 		return coins + " gp";
 	}
 
-	private static String trim(double v)
+	/** {@code coins / unit} rounded down to {@code places} decimals, worked in whole numbers so it never rounds up. */
+	private static String fixed(long coins, long unit, int places)
 	{
-		double r = Math.floor(v * 10) / 10;
-		return r == Math.floor(r) ? String.valueOf((long) r) : String.valueOf(r);
+		long scale = places == 2 ? 100 : 10;
+		long scaled = coins / (unit / scale);
+		long whole = scaled / scale;
+		String frac = String.valueOf(scaled % scale);
+		while (frac.length() < places)
+		{
+			frac = "0" + frac;
+		}
+		return whole + "." + frac;
 	}
 }

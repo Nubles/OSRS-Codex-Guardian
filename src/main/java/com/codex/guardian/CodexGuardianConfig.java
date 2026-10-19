@@ -219,4 +219,16 @@ public interface CodexGuardianConfig extends Config
 	{
 		return true;
 	}
+
+	@ConfigItem(
+		keyName = "worthOnCard",
+		name = "Worth on cards",
+		description = "Write your account's worth from Codex Ledger on the seal card; the seal in the panel shows it either way",
+		position = 5,
+		section = run
+	)
+	default boolean worthOnCard()
+	{
+		return false;
+	}
 }

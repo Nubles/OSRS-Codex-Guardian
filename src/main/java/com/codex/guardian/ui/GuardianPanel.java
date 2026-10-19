@@ -58,6 +58,7 @@ public class GuardianPanel extends PluginPanel
 	private long worth = -1;
 	private ShareActions share;
 	private java.util.function.BooleanSupplier nameOnCards = () -> true;
+	private java.util.function.BooleanSupplier worthOnCards = () -> false;
 	private String shareNote;
 
 	/**
@@ -130,6 +131,22 @@ public class GuardianPanel extends PluginPanel
 		{
 			wardStale = true;
 		}
+	}
+
+	/**
+	 * Called on the Swing thread when only the run energy has moved: the crest shows it and nothing below it is
+	 * rebuilt, since energy changes every few ticks while running and the pages show only whether it has run out.
+	 */
+	public void updateCrest(Situation situation)
+	{
+		this.situation = situation;
+		crest.update(situation, peril, journal);
+	}
+
+	/** The Ward page as it is now built, for tests that check it was not rebuilt. */
+	java.awt.Component wardView()
+	{
+		return ward.getViewport().getView();
 	}
 
 	@Override
@@ -234,8 +251,16 @@ public class GuardianPanel extends PluginPanel
 	/** Lets the journal save and copy the seal card; names go on it while the option is on. */
 	public void setShare(ShareActions share, java.util.function.BooleanSupplier nameOnCards)
 	{
+		setShare(share, nameOnCards, null);
+	}
+
+	/** As above; the account's worth goes on the card only while {@code worthOnCards} says so (off by default). */
+	public void setShare(ShareActions share, java.util.function.BooleanSupplier nameOnCards,
+		java.util.function.BooleanSupplier worthOnCards)
+	{
 		this.share = share;
 		this.nameOnCards = nameOnCards == null ? () -> true : nameOnCards;
+		this.worthOnCards = worthOnCards == null ? () -> false : worthOnCards;
 		journalChanged();
 	}
 
@@ -274,7 +299,8 @@ public class GuardianPanel extends PluginPanel
 		long now = System.currentTimeMillis();
 		java.time.ZoneId zone = java.time.ZoneId.systemDefault();
 		String name = nameOnCards.getAsBoolean() && situation.isLoggedIn() ? situation.getPlayerName() : null;
-		SealShare.Spec spec = SealShare.Spec.of(journal, situation.isOneLife(), worth, name, situation.getMode(), now, zone);
+		SealShare.Spec spec = SealShare.Spec.of(journal, situation.isOneLife(), worth, name, situation.getMode(), now, zone,
+			worthOnCards.getAsBoolean());
 		if (spec == null || share == null)
 		{
 			return;

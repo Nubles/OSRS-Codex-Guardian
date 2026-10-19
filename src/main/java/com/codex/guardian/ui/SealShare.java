@@ -61,6 +61,20 @@ public final class SealShare
 		 */
 		public static Spec of(Journal journal, boolean oneLife, long worth, String player, String mode, long now, ZoneId zone)
 		{
+			return of(journal, oneLife, worth, player, mode, now, zone, true);
+		}
+
+		/**
+		 * @param showWorth false to leave the account's worth off the card (the seal then shows the biggest hit, as it
+		 *                  does without Ledger): a shared card says what an account is worth only when the player asks
+		 */
+		public static Spec of(Journal journal, boolean oneLife, long worth, String player, String mode, long now, ZoneId zone,
+			boolean showWorth)
+		{
+			if (!showWorth)
+			{
+				worth = -1;
+			}
 			if (journal == null)
 			{
 				return null;

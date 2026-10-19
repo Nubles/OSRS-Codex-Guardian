@@ -101,4 +101,30 @@ public class CohesionTest
 		assertNotNull(card);
 		assertEquals(SealShare.WIDTH * SealShare.SCALE, card.getWidth());
 	}
+
+	@Test
+	public void theSealCardLeavesWorthOffUnlessAskedButTheJournalKeepsIt()
+	{
+		Journal run = Journal.fresh(0);
+		// The card is shared, so worth goes on it only with "Worth on cards" on; the seal in the panel always shows it.
+		SealShare.Spec hidden = SealShare.Spec.of(run, true, 1_234_567_890L, "Nubles", "Hardcore Ironman", 0, ZoneOffset.UTC, false);
+		assertEquals(-1, hidden.worth);
+		SealShare.Spec shown = SealShare.Spec.of(run, true, 1_234_567_890L, "Nubles", "Hardcore Ironman", 0, ZoneOffset.UTC, true);
+		assertEquals(1_234_567_890L, shown.worth);
+	}
+
+	@Test
+	public void theCrestShowsNewEnergyWithoutRebuildingTheWard()
+	{
+		GuardianPanel panel = new GuardianPanel(80, () -> {}, v -> {});
+		Situation s = praying();
+		panel.update(s, Peril.calm());
+		Component wardBefore = panel.wardView();
+		panel.updateCrest(new Situation.Builder().loggedIn(true).playerName("Nubles").mode("Hardcore Ironman", true)
+			.hitpoints(70, 85).prayer(60, 70).readiness(s.getReadiness()).runEnergy(41).build());
+		List<String> top = new ArrayList<>();
+		texts(panel, top);
+		assertTrue(top.toString(), top.contains("41%"));
+		assertTrue(wardBefore == panel.wardView());
+	}
 }

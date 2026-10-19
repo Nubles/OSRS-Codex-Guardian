@@ -54,10 +54,12 @@ public class SealTest
 	public void coinsFitOneColumn()
 	{
 		assertEquals("950 gp", LedgerWorth.shortCoins(950));
-		assertEquals("830K", LedgerWorth.shortCoins(830_000));
+		// The suite's one rule: whole thousands below a million, millions to one decimal, billions to two, so
+		// a figure never changes precision as it grows within a unit ("9.9M" then "12.4M", never "12M").
+		assertEquals("830k", LedgerWorth.shortCoins(830_000));
 		assertEquals("1.2M", LedgerWorth.shortCoins(1_290_000));
-		assertEquals("12M", LedgerWorth.shortCoins(12_400_000));
-		assertEquals("1.2B", LedgerWorth.shortCoins(1_234_567_890L));
-		assertEquals("2B", LedgerWorth.shortCoins(2_000_000_000L));
+		assertEquals("12.4M", LedgerWorth.shortCoins(12_400_000));
+		assertEquals("1.23B", LedgerWorth.shortCoins(1_234_567_890L));
+		assertEquals("2.00B", LedgerWorth.shortCoins(2_000_000_000L));
 	}
 }

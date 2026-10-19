@@ -259,7 +259,7 @@ public class CodexGuardianPlugin extends Plugin
 			{
 				copyCard(card);
 			}
-		}, config::nameOnCard);
+		}, config::nameOnCard, config::worthOnCard);
 		navButton = NavigationButton.builder()
 			.tooltip("Codex Guardian")
 			.icon(Shield.icon(16))
@@ -1260,11 +1260,28 @@ public class CodexGuardianPlugin extends Plugin
 		return Advice.shortName(item);
 	}
 
+	/** True when the read shown last and this one differ in nothing the panel shows but the run energy. */
+	static boolean energyOnly(Situation shown, Situation now)
+	{
+		return shown != null && shown.equals(now) && shown.getRunEnergy() != now.getRunEnergy();
+	}
+
 	/** Sends the live read to the panel, but only when something it shows has changed. */
 	private void publishSituation(Situation s, Peril p)
 	{
 		if (s.equals(shownSituation) && p.getLevel() == shownLevel && p.getScore() == shownScore)
 		{
+			// Run energy is left out of equals so the pages are not rebuilt every tick while running; the crest
+			// still shows it, so it alone is sent on when it moves.
+			if (energyOnly(shownSituation, s))
+			{
+				shownSituation = s;
+				GuardianPanel target = panel;
+				if (target != null)
+				{
+					SwingUtilities.invokeLater(() -> target.updateCrest(s));
+				}
+			}
 			return;
 		}
 		shownSituation = s;
