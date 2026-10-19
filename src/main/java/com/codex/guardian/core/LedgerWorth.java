@@ -47,7 +47,7 @@ public final class LedgerWorth
 		}
 	}
 
-	/** "12.4M", "830K", "950 gp": short enough for one column of the seal. */
+	/** "12.4M", "830K", "950 gp": short enough for one column of the seal. Rounded down, so never "1000K". */
 	public static String shortCoins(long coins)
 	{
 		if (coins >= 1_000_000_000L)
@@ -56,7 +56,7 @@ public final class LedgerWorth
 		}
 		if (coins >= 10_000_000L)
 		{
-			return Math.round(coins / 1e6) + "M";
+			return coins / 1_000_000L + "M";
 		}
 		if (coins >= 1_000_000L)
 		{
@@ -64,7 +64,7 @@ public final class LedgerWorth
 		}
 		if (coins >= 1_000L)
 		{
-			return Math.round(coins / 1e3) + "K";
+			return coins / 1_000L + "K";
 		}
 		return coins + " gp";
 	}

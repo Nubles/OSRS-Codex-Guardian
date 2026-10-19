@@ -216,8 +216,6 @@ public class CodexGuardianPlugin extends Plugin
 	private Peril.Level lastLevel = Peril.Level.CALM;
 	private int perilCooldown;
 	private boolean lowHitpointsNotified;
-	/** The account's worth from Codex Ledger, or -1 when unknown. */
-	private long ledgerWorth = -1;
 	private String lastHitSource;
 	private int accountType = -1;
 	private int lastCombatLevel = -1;
@@ -234,8 +232,6 @@ public class CodexGuardianPlugin extends Plugin
 	protected void startUp()
 	{
 		assessor = new PerilAssessor(config.foodReserve());
-		// A new panel knows no worth yet; forget the last one so the first read is sent to it.
-		ledgerWorth = -1;
 		panel = new GuardianPanel(config.foodReserve(), () -> clientThread.invokeLater(this::newRun),
 			value -> clientThread.invokeLater(() -> setOneLife(value)));
 		navButton = NavigationButton.builder()
@@ -1411,22 +1407,23 @@ public class CodexGuardianPlugin extends Plugin
 
 	/**
 	 * Reads the account's worth from Codex Ledger for the run's seal. Only when Ledger saves or the profile changes,
-	 * never per tick; without Ledger it stays unknown and the seal shows the biggest hit instead.
+	 * never per tick; without Ledger it stays unknown and the seal shows the biggest hit instead. Ledger's save runs
+	 * to 200 KB, so only the lookup happens here: the text is read on the Swing thread, never the game's.
 	 */
 	private void readWorth()
 	{
 		String profile = configManager.getRSProfileKey();
-		publishWorth(profile == null ? -1
-			: LedgerWorth.read(gson, configManager.getConfiguration(LedgerWorth.GROUP, profile, LedgerWorth.KEY)));
+		String saved = profile == null ? null : configManager.getConfiguration(LedgerWorth.GROUP, profile, LedgerWorth.KEY);
+		GuardianPanel target = panel;
+		if (target != null)
+		{
+			// Queued in order behind any earlier read or forget, so the newest always lands last.
+			SwingUtilities.invokeLater(() -> target.updateWorth(LedgerWorth.read(gson, saved)));
+		}
 	}
 
 	private void publishWorth(long worth)
 	{
-		if (worth == ledgerWorth)
-		{
-			return;
-		}
-		ledgerWorth = worth;
 		GuardianPanel target = panel;
 		if (target != null)
 		{
