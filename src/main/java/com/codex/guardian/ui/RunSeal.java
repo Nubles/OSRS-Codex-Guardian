@@ -44,8 +44,8 @@ final class RunSeal extends JComponent
 	private final String thirdLabel;
 
 	/**
-	 * @param worth what the account is worth in coins as Codex Ledger last saw it, or -1 without Ledger; shown as what
-	 *              a death would put at stake, or the biggest hit taken when there is no figure
+	 * @param worth what the account is worth in coins as Codex Ledger last saw it, or -1 without Ledger; shown as its
+	 *              worth, or the biggest hit taken when there is no figure
 	 */
 	RunSeal(Journal journal, boolean oneLife, long worth, long now)
 	{
@@ -63,8 +63,7 @@ final class RunSeal extends JComponent
 		if (worth > 0)
 		{
 			third = LedgerWorth.shortCoins(worth);
-			// On one life a death costs the account; elsewhere, or once the run has fallen, it is simply its worth.
-			thirdLabel = oneLife && !fallen ? "at stake" : "worth";
+			thirdLabel = "worth";
 		}
 		else
 		{
@@ -84,7 +83,7 @@ final class RunSeal extends JComponent
 		}
 		if (worth > 0)
 		{
-			tip.append("<br>").append(oneLife && !fallen ? "At stake" : "Worth").append(": the account's worth as Codex Ledger last saw it.");
+			tip.append("<br>Worth: the account's worth as Codex Ledger last saw it.");
 		}
 		setToolTipText(tip.append("</html>").toString());
 	}

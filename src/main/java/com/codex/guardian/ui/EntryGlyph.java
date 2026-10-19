@@ -42,6 +42,7 @@ class EntryGlyph extends JComponent
 			case STATUS_LOST:
 				return Theme.BLOOD;
 			case CLOSE_CALL:
+			case UNCONFIRMED_DEATH:
 				return Theme.EMBER;
 			case DISCONNECT:
 				return Theme.BLOCKED;
@@ -113,6 +114,7 @@ class EntryGlyph extends JComponent
 			}
 			case DEATH:
 			case SAFE_DEATH:
+			case UNCONFIRMED_DEATH:
 			{
 				// A small skull.
 				g.fill(new Ellipse2D.Float(cx - s * 0.24f, y + s * 0.2f, s * 0.48f, s * 0.42f));

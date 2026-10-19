@@ -234,6 +234,7 @@ public class CodexGuardianPlugin extends Plugin
 		assessor = new PerilAssessor(config.foodReserve());
 		panel = new GuardianPanel(config.foodReserve(), () -> clientThread.invokeLater(this::newRun),
 			value -> clientThread.invokeLater(() -> setOneLife(value)));
+		panel.setOnMarkFallen(at -> clientThread.invokeLater(() -> markFallen(at)));
 		navButton = NavigationButton.builder()
 			.tooltip("Codex Guardian")
 			.icon(Shield.icon(16))
@@ -399,7 +400,7 @@ public class CodexGuardianPlugin extends Plugin
 		}
 		if (LedgerWorth.GROUP.equals(event.getGroup()) && LedgerWorth.KEY.equals(event.getKey()))
 		{
-			// Codex Ledger saved: the run's seal shows what a death would put at stake.
+			// Codex Ledger saved: the run's seal shows the account's worth.
 			clientThread.invokeLater(this::readWorth);
 			return;
 		}
@@ -516,8 +517,17 @@ public class CodexGuardianPlugin extends Plugin
 		}
 		// The killing blow is still waiting for the next tick; record it now so the replay ends at zero.
 		recorder.tick(0, situation.getMaxHitpoints(), readiness.getFoodCount(), Supplies.potionDoses(lastInventory));
-		journal.death(place(situation), lastHitSource, situation.isOneLife(), situation.risk() == Risk.SAFE,
-			recorder.death(), System.currentTimeMillis());
+		if (situation.isOneLife() && Zones.isUnconfirmedSafe(situation.getZone()))
+		{
+			// A minigame on a Hardcore World: the advice treated it as deadly, but the record must not say the run
+			// fell when it may not have. The player can mark it as fallen from the journal.
+			journal.unconfirmedDeath(place(situation), lastHitSource, recorder.death(), System.currentTimeMillis());
+		}
+		else
+		{
+			journal.death(place(situation), lastHitSource, situation.isOneLife(), situation.risk() == Risk.SAFE,
+				recorder.death(), System.currentTimeMillis());
+		}
 		journalChanged = true;
 		closeCalls.reset();
 		damage.clear();
@@ -1528,6 +1538,16 @@ public class CodexGuardianPlugin extends Plugin
 		if (target != null)
 		{
 			SwingUtilities.invokeLater(() -> target.updateTrip(next));
+		}
+	}
+
+	/** The player says a minigame death on a Hardcore World ended the run. */
+	private void markFallen(long at)
+	{
+		if (journal != null && journal.markFallen(at))
+		{
+			saveJournal();
+			publishJournal();
 		}
 	}
 

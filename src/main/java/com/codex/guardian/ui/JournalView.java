@@ -6,6 +6,7 @@ import com.codex.guardian.core.Situation;
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
 import java.util.List;
+import java.util.function.Function;
 import javax.swing.BoxLayout;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -29,6 +30,16 @@ final class JournalView
 	static StackPanel build(Journal journal, Situation situation, long now, CodexButton newRun, CodexButton oneLifeToggle,
 		long worth)
 	{
+		return build(journal, situation, now, newRun, oneLifeToggle, worth, null);
+	}
+
+	/**
+	 * @param fallenButton makes the "Mark as fallen" button under a minigame death on a Hardcore World, or null for
+	 *                     none
+	 */
+	static StackPanel build(Journal journal, Situation situation, long now, CodexButton newRun, CodexButton oneLifeToggle,
+		long worth, Function<Journal.Entry, CodexButton> fallenButton)
+	{
 		boolean oneLife = situation.isOneLife();
 		StackPanel stack = new StackPanel(6, 8);
 		if (journal == null)
@@ -50,7 +61,7 @@ final class JournalView
 		for (int i = entries.size() - 1; i >= 0; i--)
 		{
 			Journal.Entry e = entries.get(i);
-			page.add(entry(e, i == entries.size() - 1, i == 0, now));
+			page.add(entry(e, i == entries.size() - 1, i == 0, now, fallenButton));
 		}
 		stack.add(page);
 		return stack;
@@ -115,7 +126,8 @@ final class JournalView
 		return card;
 	}
 
-	private static JPanel entry(Journal.Entry e, boolean first, boolean last, long now)
+	private static JPanel entry(Journal.Entry e, boolean first, boolean last, long now,
+		Function<Journal.Entry, CodexButton> fallenButton)
 	{
 		JPanel row = new JPanel(new BorderLayout(6, 0));
 		row.setOpaque(false);
@@ -131,7 +143,7 @@ final class JournalView
 		JPanel head = new JPanel(new BorderLayout(4, 0));
 		head.setOpaque(false);
 		JLabel title = Ui.label(e.getTitle(), Theme.body(), e.getType() == Journal.Type.DEATH || e.getType() == Journal.Type.STATUS_LOST
-			? Theme.BLOOD : Theme.TEXT);
+			? Theme.BLOOD : e.getType() == Journal.Type.UNCONFIRMED_DEATH ? Theme.EMBER : Theme.TEXT);
 		title.setToolTipText(e.getTitle());
 		head.add(title, BorderLayout.CENTER);
 		head.add(Ui.label(Format.ago(e.getAt(), now), Theme.small(), Theme.TEXT_FAINT), BorderLayout.EAST);
@@ -156,6 +168,24 @@ final class JournalView
 			JLabel line = Ui.wrapped(replay.summary(), Theme.small(), Theme.TEXT_FAINT, TEXT);
 			line.setAlignmentX(0f);
 			text.add(line);
+		}
+		if (e.getType() == Journal.Type.UNCONFIRMED_DEATH)
+		{
+			// Nobody can yet confirm a minigame death is safe on a Hardcore World, so the run is not called fallen.
+			JLabel why = Ui.wrapped("On a Hardcore World this may not count. If the game ended your run, mark it.",
+				Theme.small(), Theme.TEXT_FAINT, TEXT);
+			why.setAlignmentX(0f);
+			text.add(why);
+			CodexButton button = fallenButton == null ? null : fallenButton.apply(e);
+			if (button != null)
+			{
+				JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+				actions.setOpaque(false);
+				actions.setBorder(new EmptyBorder(4, 0, 0, 0));
+				actions.add(button);
+				actions.setAlignmentX(0f);
+				text.add(actions);
+			}
 		}
 		row.add(text, BorderLayout.CENTER);
 		// The glyph column stretches with the text so the thread reaches the next entry.

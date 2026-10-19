@@ -25,7 +25,12 @@ public final class Journal
 		/** A death in a safe minigame: worth remembering, but it costs nothing. */
 		SAFE_DEATH,
 		/** Lag or a freeze while something could hurt you. */
-		LAG
+		LAG,
+		/**
+		 * A death in a minigame on a Hardcore World, where nobody can yet confirm the minigame is still safe: it does not
+		 * end the run unless the player marks it as fallen.
+		 */
+		UNCONFIRMED_DEATH
 	}
 
 	public static final class Entry
@@ -113,6 +118,8 @@ public final class Journal
 	int deaths;
 	/** Deaths in safe minigames, which do not end a run. */
 	int safeDeaths;
+	/** Minigame deaths on a Hardcore World not yet marked as the end of the run. */
+	int unconfirmedDeaths;
 	int disconnects;
 	/** Bouts of lag survived while something could hurt you. */
 	int lagSpikes;
@@ -254,6 +261,47 @@ public final class Journal
 		add(now, Type.DEATH, oneLife ? "The run has fallen" : "Died", detail, replay);
 	}
 
+	/** Title of a minigame death on a Hardcore World until the player says whether it ended the run. */
+	public static final String UNCONFIRMED_TITLE = "Unconfirmed death";
+
+	/**
+	 * Records a minigame death on a Hardcore World. Whether such a death is still safe there can't be confirmed, so it
+	 * neither ends the run nor counts as safe: the player can mark it as fallen with {@link #markFallen}.
+	 */
+	public void unconfirmedDeath(String place, String source, Replay replay, long now)
+	{
+		String detail = (place == null ? "Somewhere in Gielinor" : capitalise(at(place))) + (source != null ? ", to " + source : "");
+		unconfirmedDeaths++;
+		add(now, Type.UNCONFIRMED_DEATH, UNCONFIRMED_TITLE, detail, replay);
+	}
+
+	/**
+	 * The player says the unconfirmed death recorded at this moment ended the run: it becomes a death like any other.
+	 *
+	 * @return true when such an entry was found and changed
+	 */
+	public boolean markFallen(long at)
+	{
+		for (int i = entries.size() - 1; i >= 0; i--)
+		{
+			Entry e = entries.get(i);
+			if (e.type == Type.UNCONFIRMED_DEATH && e.at == at)
+			{
+				e.type = Type.DEATH;
+				e.title = "The run has fallen";
+				unconfirmedDeaths = Math.max(0, unconfirmedDeaths - 1);
+				deaths++;
+				return true;
+			}
+		}
+		return false;
+	}
+
+	public int getUnconfirmedDeaths()
+	{
+		return unconfirmedDeaths;
+	}
+
 	/** Notes that the account is hardcore right now. */
 	public void noteHardcore()
 	{
@@ -392,7 +440,7 @@ public final class Journal
 		{
 			Entry e = entries.get(i);
 			// A death keeps its replay for as long as the entry lasts; it is the one most worth reading.
-			if (e.replay != null && e.type != Type.DEATH && ++kept > MAX_REPLAYS)
+			if (e.replay != null && e.type != Type.DEATH && e.type != Type.UNCONFIRMED_DEATH && ++kept > MAX_REPLAYS)
 			{
 				e.replay = null;
 			}
@@ -404,7 +452,7 @@ public final class Journal
 			for (int i = 1; i < entries.size(); i++)
 			{
 				Type t = entries.get(i).type;
-				if (t != Type.DEATH && t != Type.STATUS_LOST)
+				if (t != Type.DEATH && t != Type.STATUS_LOST && t != Type.UNCONFIRMED_DEATH)
 				{
 					drop = i;
 					break;

@@ -18,11 +18,12 @@ public final class Zones
 	private static final String QUIET = "Monsters here can still hit hard if you are underlevelled. Keep some food on you.";
 	private static final String SAFE = "Deaths here are normally safe, but check your mode's rules before you rely on that.";
 	/**
-	 * Hardcore Worlds open on 4 Nov 2026 and Jagex has not said whether a minigame death there still costs nothing.
-	 * Until it can be checked, Guardian fails toward danger: a wrong "safe" costs a run, a wrong "deadly" costs nothing.
+	 * Whether a minigame death on a Hardcore World still costs nothing can't be checked yet. Until it can, Guardian's
+	 * advice fails toward danger: a wrong "safe" costs a run, a wrong "deadly" costs nothing. (The journal does not
+	 * call such a death the end of the run; see {@link Journal#unconfirmedDeath}.)
 	 */
-	static final String UNCONFIRMED = "Normally a safe death, but Guardian can't confirm that on Hardcore Worlds before "
-		+ "4 Nov, so it treats a death here as the end of the run.";
+	static final String UNCONFIRMED = "Normally a safe death, but Guardian can't confirm minigame deaths are safe on "
+		+ "Hardcore Worlds yet, so it treats a death here as the end of the run.";
 	private static final String SKILLING = "A skilling boss. Its damage adds up while you work, so keep food and leave early.";
 
 	private static final Map<Integer, Zone> BY_REGION = new HashMap<>();

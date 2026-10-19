@@ -51,6 +51,10 @@ public class GuardianPanel extends PluginPanel
 	private boolean active;
 	private boolean wardStale;
 	private boolean journalStale;
+	/** Called on the Swing thread with the time of the unconfirmed death the player marked as fallen. */
+	private java.util.function.LongConsumer onMarkFallen = at -> {};
+	/** The unconfirmed death waiting for a second click to be marked as fallen, or -1. */
+	private long markingAt = -1;
 	private long worth = -1;
 
 	/**
@@ -160,6 +164,12 @@ public class GuardianPanel extends PluginPanel
 		journalChanged();
 	}
 
+	/** Where a click on "Mark as fallen" goes, with the time of the death it was on. */
+	public void setOnMarkFallen(java.util.function.LongConsumer onMarkFallen)
+	{
+		this.onMarkFallen = onMarkFallen == null ? at -> {} : onMarkFallen;
+	}
+
 	/** Called on the Swing thread with the account's worth from Codex Ledger, or -1 when there is none. */
 	public void updateWorth(long worth)
 	{
@@ -213,7 +223,8 @@ public class GuardianPanel extends PluginPanel
 	private void rebuildJournal()
 	{
 		journalStale = false;
-		replace(journalView, JournalView.build(journal, situation, System.currentTimeMillis(), newRunButton(), oneLifeButton(), worth));
+		replace(journalView, JournalView.build(journal, situation, System.currentTimeMillis(), newRunButton(), oneLifeButton(), worth,
+			this::fallenButton));
 		replace(perils, PerilsView.build(journal, hits));
 	}
 
@@ -226,6 +237,27 @@ public class GuardianPanel extends PluginPanel
 		}
 		boolean on = situation.isOneLife();
 		return new CodexButton(on ? "Not one-life" : "Mark one-life", false, () -> onOneLife.accept(!on));
+	}
+
+	/** "Mark as fallen" under an unconfirmed death; like a new run, it takes a second click. */
+	private CodexButton fallenButton(Journal.Entry entry)
+	{
+		long at = entry.getAt();
+		boolean asking = markingAt == at;
+		return new CodexButton(asking ? "Click again: the run fell" : "Mark as fallen", asking, () ->
+		{
+			if (markingAt != at)
+			{
+				markingAt = at;
+				confirmTimeout.restart();
+				rebuildJournal();
+				return;
+			}
+			markingAt = -1;
+			confirmTimeout.stop();
+			rebuildJournal();
+			onMarkFallen.accept(at);
+		});
 	}
 
 	private CodexButton newRunButton()
@@ -245,6 +277,10 @@ public class GuardianPanel extends PluginPanel
 	private void setConfirming(boolean value)
 	{
 		confirming = value;
+		if (!value)
+		{
+			markingAt = -1;
+		}
 		if (value)
 		{
 			confirmTimeout.restart();

@@ -61,7 +61,7 @@ public class ZonesTest
 		assertEquals(Risk.HIGH, caves.getRisk());
 		assertEquals("Minigame", caves.kindLabel());
 		assertTrue(Zones.isUnconfirmedSafe(caves));
-		assertTrue(caves.getAdvice().contains("Hardcore Worlds") && caves.getAdvice().contains("4 Nov"));
+		assertTrue(caves.getAdvice().contains("Hardcore Worlds") && caves.getAdvice().contains("yet") && !caves.getAdvice().matches(".*\\d.*"));
 		assertEquals(Risk.EXTREME, Zones.onHardcoreWorld(Zones.forRegion(9043)).getRisk());
 		assertEquals(Risk.MEDIUM, Zones.onHardcoreWorld(Zones.forRegion(9033)).getRisk());
 		// Every safe minigame has a Hardcore World read, and nothing else changes.

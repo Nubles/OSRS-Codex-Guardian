@@ -118,7 +118,7 @@ public class PerilAssessorTest
 	@Test
 	public void minigameOnAHardcoreWorldIsNotTakenAsSafe()
 	{
-		// Whether a minigame death is free on Hardcore Worlds can't be checked before 4 Nov: the read must not soften.
+		// Whether a minigame death is free on Hardcore Worlds can't be checked yet: the read must not soften.
 		Peril p = assessor.assess(base().mode("Hardcore World", true).zone(Zones.onHardcoreWorld(Zones.forRegion(9033)))
 			.hitpoints(1, 99).damage(0.2, 1).attacker(new Threat("Dagannoth mother", 100, false)).build());
 		assertEquals(Peril.Level.PERIL, p.getLevel());
