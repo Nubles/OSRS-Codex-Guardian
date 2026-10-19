@@ -58,6 +58,7 @@ import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.HitsplatApplied;
 import net.runelite.api.events.ItemContainerChanged;
+import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.events.StatChanged;
 import net.runelite.api.events.WidgetClosed;
 import net.runelite.api.gameval.ItemID;
@@ -78,6 +79,7 @@ import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.ui.overlay.OverlayManager;
+import net.runelite.client.util.Text;
 
 @PluginDescriptor(
 	name = "Codex Guardian",
@@ -91,6 +93,8 @@ public class CodexGuardianPlugin extends Plugin
 	static final String HITS_KEY = "hitMemory";
 	/** A lag warning comes back at most once a minute, so a bad evening is not a stream of notifications. */
 	private static final int LAG_COOLDOWN_TICKS = 100;
+	/** Hits this many ticks after using an item that hurts are not credited to a monster. */
+	private static final int SELF_HARM_TICKS = 2;
 	/** This account's own one-life choice, "true" or "false"; absent until the account has one. */
 	static final String ONE_LIFE_KEY = "oneLifeAccount";
 	/** Codex Quartermaster's saved data, read only, for the kit you packed and what your bank holds. */
@@ -149,6 +153,8 @@ public class CodexGuardianPlugin extends Plugin
 	private HitMemory hits = new HitMemory();
 	private boolean hitsChanged;
 	private Lag.State lastLag = Lag.State.STEADY;
+	/** The tick an item that hurts to use (a divine potion, a rock cake) was last used; see {@link HitMemory#hurtsToUse}. */
+	private int selfHarmTick = Integer.MIN_VALUE / 2;
 	private int lagCooldown;
 	private final Map<Skill, Integer> levels = new EnumMap<>(Skill.class);
 
@@ -458,6 +464,16 @@ public class CodexGuardianPlugin extends Plugin
 		if (journal != null)
 		{
 			journal.damage(source, amount, place(situation), System.currentTimeMillis());
+		}
+	}
+
+	@Subscribe
+	public void onMenuOptionClicked(MenuOptionClicked event)
+	{
+		// Read only: the click still goes through untouched. A self-inflicted hit must not be blamed on a monster.
+		if (HitMemory.hurtsToUse(Text.removeTags(event.getMenuTarget())))
+		{
+			selfHarmTick = client.getTickCount();
 		}
 	}
 
@@ -789,6 +805,11 @@ public class CodexGuardianPlugin extends Plugin
 				return;
 			default:
 				break;
+		}
+		// The item's damage lands on the next tick or the one after, depending on when the click was sent.
+		if (client.getTickCount() - selfHarmTick <= SELF_HARM_TICKS)
+		{
+			return;
 		}
 		NPC only = null;
 		for (NPC npc : client.getTopLevelWorldView().npcs())

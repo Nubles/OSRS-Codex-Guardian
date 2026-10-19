@@ -79,6 +79,23 @@ public final class HitMemory
 		return this;
 	}
 
+	/**
+	 * True for an item whose use hurts you: divine potions, overloads, Zamorak brews and mixes, the dwarven rock
+	 * cake and the locator orb. Their hitsplat looks like any other, so a hit landing just after one is used is
+	 * never credited to the monster you are fighting (a goblin has not "hit you for 10" because you drank a divine
+	 * super combat).
+	 */
+	public static boolean hurtsToUse(String item)
+	{
+		if (item == null)
+		{
+			return false;
+		}
+		String name = item.trim().toLowerCase();
+		return name.startsWith("divine ") || name.startsWith("overload") || name.startsWith("zamorak brew")
+			|| name.startsWith("zamorak mix") || name.contains("rock cake") || name.startsWith("locator orb");
+	}
+
 	private static String key(String name, int level)
 	{
 		return name + "|" + level;

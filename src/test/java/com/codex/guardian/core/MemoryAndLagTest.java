@@ -54,6 +54,22 @@ public class MemoryAndLagTest
 	}
 
 	@Test
+	public void itemsThatHurtToUseAreKnownSoTheirHitIsNotBlamedOnAMonster()
+	{
+		assertTrue(HitMemory.hurtsToUse("Divine super combat potion(4)"));
+		assertTrue(HitMemory.hurtsToUse("Divine ranging potion(1)"));
+		assertTrue(HitMemory.hurtsToUse("Overload (4)"));
+		assertTrue(HitMemory.hurtsToUse("Zamorak brew(3)"));
+		assertTrue(HitMemory.hurtsToUse("Zamorak mix(2)"));
+		assertTrue(HitMemory.hurtsToUse("Dwarven rock cake"));
+		assertTrue(HitMemory.hurtsToUse("Locator orb"));
+		assertFalse(HitMemory.hurtsToUse("Shark"));
+		assertFalse(HitMemory.hurtsToUse("Saradomin brew(4)"));
+		assertFalse(HitMemory.hurtsToUse("Super combat potion(4)"));
+		assertFalse(HitMemory.hurtsToUse(null));
+	}
+
+	@Test
 	public void theWildernessCountsAsOnePlaceForMemory()
 	{
 		HitMemory hits = new HitMemory();
