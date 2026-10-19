@@ -55,4 +55,27 @@ public final class OneLife
 		}
 		return new Decision(legacyGlobal && hadJournal, true);
 	}
+
+	/**
+	 * Whether the world is a Hardcore World, where every account has one life. Matched by the world type's name, so
+	 * a client too old to know the type simply reads false and the account's own choice stands.
+	 */
+	public static boolean hardcoreWorld(Iterable<? extends Enum<?>> worldTypes)
+	{
+		if (worldTypes == null)
+		{
+			return false;
+		}
+		for (Enum<?> type : worldTypes)
+		{
+			if (type != null && HARDCORE_WORLD_TYPE.equals(type.name()))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** RuneLite's name for the world flag Hardcore Worlds carry. */
+	static final String HARDCORE_WORLD_TYPE = "HARDCORE_MAIN";
 }

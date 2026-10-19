@@ -44,6 +44,8 @@ public final class Situation
 	private final int tilesToDitch;
 	private final Lag.State lag;
 	private final String lagText;
+	/** Run energy in whole percent, or -1 when unknown. */
+	private final int runEnergy;
 
 	private Situation(Builder b)
 	{
@@ -72,6 +74,7 @@ public final class Situation
 		tilesToDitch = b.tilesToDitch;
 		lag = b.lag;
 		lagText = b.lagText;
+		runEnergy = b.runEnergy;
 	}
 
 	public static Situation loggedOut()
@@ -171,6 +174,22 @@ public final class Situation
 	public boolean isTeleblocked()
 	{
 		return teleblocked;
+	}
+
+	/** Run energy in whole percent, or -1 when it was not read. */
+	public int getRunEnergy()
+	{
+		return runEnergy;
+	}
+
+	/**
+	 * True when running away is the plan but there is next to no energy to run with: in the Wilderness, under fire,
+	 * with no teleport that works here. A player who cannot run is caught by anyone who can.
+	 */
+	public boolean cannotRun()
+	{
+		return runEnergy >= 0 && runEnergy < Advice.LOW_RUN_ENERGY && wildernessLevel > 0 && !canEscape()
+			&& (!attackers.isEmpty() || damagePerTick > 0);
 	}
 
 	/** Whether a teleport you carry would get you out from here, right now. */
@@ -280,7 +299,9 @@ public final class Situation
 			&& Double.compare(damagePerTick, s.damagePerTick) == 0 && recentMaxHit == s.recentMaxHit
 			&& Objects.equals(playerName, s.playerName) && Objects.equals(mode, s.mode) && toxin == s.toxin
 			&& Objects.equals(zone, s.zone) && attackers.equals(s.attackers) && Objects.equals(readiness, s.readiness)
-			&& lag == s.lag && Objects.equals(lagText, s.lagText);
+			&& lag == s.lag && Objects.equals(lagText, s.lagText)
+			// Energy moves every tick while running; only whether it has run out changes what is shown.
+			&& cannotRun() == s.cannotRun();
 	}
 
 	@Override
@@ -288,7 +309,7 @@ public final class Situation
 	{
 		return Objects.hash(loggedIn, playerName, mode, oneLife, world, combatLevel, hitpoints, maxHitpoints, prayer,
 			maxPrayer, prayerLeft, toxin, zone, wildernessLevel, nearWilderness, multiCombat, teleblocked, attackers, damagePerTick, recentMaxHit,
-			readiness, tilesToReach, tilesToDitch, lag, lagText);
+			readiness, tilesToReach, tilesToDitch, lag, lagText, cannotRun());
 	}
 
 	public static final class Builder
@@ -318,6 +339,13 @@ public final class Situation
 		private Readiness readiness = Readiness.empty();
 		private Lag.State lag = Lag.State.STEADY;
 		private String lagText = "Steady";
+		private int runEnergy = -1;
+
+		public Builder runEnergy(int percent)
+		{
+			runEnergy = percent;
+			return this;
+		}
 
 		public Builder loggedIn(boolean value)
 		{

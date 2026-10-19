@@ -14,6 +14,8 @@ public final class Advice
 	/** What to do now, or null when nothing urgent needs saying. */
 	/** With less prayer than this left, restores included, the advice is to leave before it fails. */
 	static final int PRAYER_LEAVE_SECONDS = 15;
+	/** Under this much run energy (in percent) running away is not a plan: anyone running catches you. */
+	public static final int LOW_RUN_ENERGY = 10;
 
 	public static String now(Situation s, Peril p)
 	{
@@ -54,12 +56,14 @@ public final class Advice
 				{
 					return toReach > 0 ? "Eat, walk " + toReach + " tiles south" : "Eat, walk south to level " + walkTo;
 				}
-				return "Eat, and run south";
+				return s.cannotRun() && r.getEnergyDoses() > 0 ? "Eat, sip energy, run south" : "Eat, and run south";
 			}
 			if (wild > 0)
 			{
-				return walkBack && toReach > 0 ? "Run " + toReach + " tiles south" : toDitch > 0 ? "Run " + toDitch + " tiles south"
+				String run = walkBack && toReach > 0 ? "Run " + toReach + " tiles south" : toDitch > 0 ? "Run " + toDitch + " tiles south"
 					: "Run south now";
+				// Out of energy, the run is a walk: a sip first is what makes it a run again.
+				return s.cannotRun() && r.getEnergyDoses() > 0 ? "Sip energy, r" + run.substring(1) : run;
 			}
 			return s.isTeleblocked() ? "Run: teleblocked, no food" : "Run: no food, no teleport";
 		}

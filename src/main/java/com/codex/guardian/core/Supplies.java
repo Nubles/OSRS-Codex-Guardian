@@ -238,6 +238,10 @@ public final class Supplies
 		{
 			b.prayerDoses(doses);
 		}
+		if (base.startsWith("stamina ") || base.startsWith("energy ") || base.startsWith("super energy"))
+		{
+			b.energyDoses(doses);
+		}
 		if (base.contains("anti-venom") || base.equals("antidote++"))
 		{
 			b.antivenomDoses(doses);

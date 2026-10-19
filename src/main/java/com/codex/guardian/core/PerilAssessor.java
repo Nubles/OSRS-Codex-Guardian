@@ -121,6 +121,14 @@ public final class PerilAssessor
 			score += add(reasons, Peril.Topic.PLACE, "The Wilderness starts just north of you", Peril.Tone.NOTE, 4);
 		}
 
+		// No run energy with no teleport that works: running south is the only plan left, and it is a walk.
+		if (s.cannotRun())
+		{
+			boolean sip = s.getReadiness().getEnergyDoses() > 0;
+			score += add(reasons, Peril.Topic.VITALS, sip ? "Out of run energy: sip an energy potion"
+				: "Out of run energy: anyone running will catch you", sip ? Peril.Tone.WARN : Peril.Tone.BAD, sip ? 6 : 10);
+		}
+
 		// Who is attacking you.
 		List<Threat> attackers = s.getAttackers();
 		if (attackers.size() >= 2)

@@ -85,4 +85,61 @@ public class AdviceTest
 		Situation s = fight(15, 8).zone(Zones.wilderness(25)).wilderness(25, false).readiness(kit("Shark")).build();
 		assertEquals("Eat, and run south", advise(s));
 	}
+
+	@Test
+	public void outOfRunEnergyInTheWildernessSaysSipFirst()
+	{
+		// Level 35, no teleport works: running south is the plan, and with 3% energy only a sip makes it a run.
+		Situation.Builder b = fight(20, 25).wilderness(35, false).distances(-1, 120).runEnergy(3);
+		assertEquals("Sip energy, run 120 tiles south", advise(b.readiness(kit("Amulet of glory(4)", "Stamina potion(2)")).build()));
+		assertEquals("Run 120 tiles south", advise(fight(20, 25).wilderness(35, false).distances(-1, 120).runEnergy(3)
+			.readiness(kit("Amulet of glory(4)")).build()));
+		// With energy to spare the run is a run.
+		assertEquals("Run 120 tiles south", advise(fight(20, 25).wilderness(35, false).distances(-1, 120).runEnergy(80)
+			.readiness(kit("Amulet of glory(4)", "Stamina potion(2)")).build()));
+	}
+
+	@Test
+	public void runEnergyOnlyMattersWhenRunningIsThePlan()
+	{
+		// A teleport that works here is the way out, so energy is no reason for alarm.
+		Situation withTeleport = fight(60, 10).wilderness(12, false).runEnergy(0).readiness(kit("Shark", "Amulet of glory(4)")).build();
+		org.junit.Assert.assertFalse(withTeleport.cannotRun());
+		// Out of the Wilderness nobody chases you to the ditch.
+		org.junit.Assert.assertFalse(fight(60, 10).runEnergy(0).readiness(kit("Shark")).build().cannotRun());
+		Situation stuck = fight(60, 10).wilderness(35, false).runEnergy(0).readiness(kit("Shark")).build();
+		org.junit.Assert.assertTrue(stuck.cannotRun());
+		boolean named = false;
+		for (Peril.Reason reason : assessor.assess(stuck).getReasons())
+		{
+			named |= reason.getText().startsWith("Out of run energy");
+		}
+		org.junit.Assert.assertTrue(named);
+		// Unread energy (-1) never counts as none.
+		org.junit.Assert.assertFalse(fight(60, 10).wilderness(35, false).readiness(kit("Shark")).build().cannotRun());
+	}
+
+	@Test
+	public void energyDosesAreCountedButNotAsPrayerOrCures()
+	{
+		Readiness r = kit("Stamina potion(4)", "Super energy(3)", "Energy mix(2)", "Prayer potion(4)");
+		assertEquals(9, r.getEnergyDoses());
+		assertEquals(4, r.getPrayerDoses());
+	}
+
+	@Test
+	public void aHardcoreWorldIsKnownByItsWorldTypeName()
+	{
+		org.junit.Assert.assertTrue(OneLife.hardcoreWorld(java.util.EnumSet.of(FakeWorld.MEMBERS, FakeWorld.HARDCORE_MAIN)));
+		org.junit.Assert.assertFalse(OneLife.hardcoreWorld(java.util.EnumSet.of(FakeWorld.MEMBERS)));
+		org.junit.Assert.assertFalse(OneLife.hardcoreWorld(null));
+		// The real client's enum carries the type this matches.
+		org.junit.Assert.assertTrue(OneLife.hardcoreWorld(java.util.EnumSet.allOf(net.runelite.api.WorldType.class)));
+	}
+
+	private enum FakeWorld
+	{
+		MEMBERS,
+		HARDCORE_MAIN
+	}
 }

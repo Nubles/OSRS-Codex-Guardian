@@ -595,7 +595,12 @@ public class CodexGuardianPlugin extends Plugin
 		int type = client.getVarbitValue(VarbitID.IRONMAN);
 		boolean hardcore = type == 3 || type == 5;
 		String mode = modeName(type);
-		if (!hardcore && accountOneLife)
+		if (!hardcore && OneLife.hardcoreWorld(client.getWorldType()))
+		{
+			// On a Hardcore World every account has one life, whatever it was marked in the panel.
+			b.mode("Hardcore World", true);
+		}
+		else if (!hardcore && accountOneLife)
 		{
 			b.mode("One-life account", true);
 		}
@@ -625,6 +630,7 @@ public class CodexGuardianPlugin extends Plugin
 		}
 		b.zone(zone).wilderness(wild, !inWilderness && where != null && Zones.nearWilderness(where.getX(), where.getY()));
 		b.multiCombat(client.getVarbitValue(VarbitID.MULTIWAY_INDICATOR) == 1);
+		b.runEnergy(client.getEnergy() / 100);
 		b.teleblocked(client.getVarbitValue(VarbitID.TELEBLOCK_CYCLES) > TELEBLOCK_ACTIVE_ABOVE);
 
 		for (NPC npc : client.getTopLevelWorldView().npcs())
