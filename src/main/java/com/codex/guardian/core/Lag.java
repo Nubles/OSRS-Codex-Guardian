@@ -30,6 +30,13 @@ public final class Lag
 	static final int SHAKY_LATE = 2;
 	/** A freeze keeps the state FROZEN for this many ticks after it ends, so it is seen. */
 	static final int FREEZE_HOLD = 10;
+	/**
+	 * Ticks ignored after a login or a world hop. The first frames on a fresh world load models, sprites and the
+	 * map, so a few ticks arrive late on any connection; counting them would warn of lag that is not there.
+	 */
+	static final int WARMUP_TICKS = 8;
+	/** Ticks ignored after a region load, whose first frames are heavy for the same reason, if briefly. */
+	static final int LOAD_WARMUP_TICKS = 2;
 
 	private final long[] gaps = new long[WINDOW];
 	private int cursor;
@@ -37,10 +44,19 @@ public final class Lag
 	private long last = -1;
 	private int sinceFreeze = Integer.MAX_VALUE;
 	private long worstGap;
+	/** Ticks still to be ignored after a login, hop or region load. */
+	private int warmup;
 
 	/** Records a tick arriving at {@code nowMs} (any steady clock). */
 	public void tick(long nowMs)
 	{
+		if (warmup > 0)
+		{
+			// Still warming up: only the time is noted, so the first counted gap starts from here.
+			warmup--;
+			last = nowMs;
+			return;
+		}
 		if (last >= 0)
 		{
 			long gap = nowMs - last;
@@ -64,9 +80,10 @@ public final class Lag
 	public void skip()
 	{
 		last = -1;
+		warmup = Math.max(warmup, LOAD_WARMUP_TICKS);
 	}
 
-	/** Forgets everything, as after a login or a world hop, whose own pauses are not lag. */
+	/** Forgets everything, as after a login or a world hop, whose own pauses are not lag, and starts the warm-up. */
 	public void reset()
 	{
 		java.util.Arrays.fill(gaps, 0);
@@ -75,6 +92,13 @@ public final class Lag
 		last = -1;
 		sinceFreeze = Integer.MAX_VALUE;
 		worstGap = 0;
+		warmup = WARMUP_TICKS;
+	}
+
+	/** True while the first ticks after a login, hop or region load are being ignored. */
+	public boolean isWarmingUp()
+	{
+		return warmup > 0;
 	}
 
 	/** Late ticks among the recent ones. */

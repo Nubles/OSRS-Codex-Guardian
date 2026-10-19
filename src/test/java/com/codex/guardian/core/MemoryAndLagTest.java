@@ -209,6 +209,42 @@ public class MemoryAndLagTest
 	}
 
 	@Test
+	public void theHeavyFirstTicksAfterALoginOrHopAreNotLag()
+	{
+		// Logging in: the client resets the watch, a region loads, then the first ticks crawl in while the
+		// world's models and map are built. None of that is the connection.
+		Lag lag = new Lag();
+		lag.reset();
+		lag.skip();
+		assertTrue(lag.isWarmingUp());
+		long now = 0;
+		long[] heavy = {0, 1_800, 1_400, 3_000, 1_200, 900, 700, 650};
+		for (long gap : heavy)
+		{
+			now += gap;
+			lag.tick(now);
+		}
+		assertFalse(lag.isWarmingUp());
+		assertEquals(Lag.State.STEADY, lag.state());
+		assertEquals(0, lag.lateTicks());
+		// Once warmed up, real lag counts again, starting from the last warm-up tick (not from before it).
+		lag.tick(now += 600);
+		lag.tick(now += 1_300);
+		lag.tick(now += 1_200);
+		assertEquals(Lag.State.SHAKY, lag.state());
+		// A region load mid-session only skips its own pause and a couple of ticks, not the whole warm-up.
+		Lag walking = ticks(600, 600);
+		walking.skip();
+		walking.tick(10_000);
+		walking.tick(11_500);
+		walking.tick(12_100);
+		walking.tick(12_700);
+		walking.tick(14_000);
+		walking.tick(15_200);
+		assertEquals(2, walking.lateTicks());
+	}
+
+	@Test
 	public void lagCountsOnlyWhereSomethingCanHurtYou()
 	{
 		Situation town = base().lag(Lag.State.SHAKY, "3 late ticks").build();
