@@ -1,5 +1,6 @@
 package com.codex.guardian;
 
+import com.codex.guardian.notes.FieldNotes;
 import com.codex.guardian.core.Advice;
 import com.codex.guardian.core.CloseCallWatch;
 import com.codex.guardian.core.DamageLog;
@@ -162,6 +163,9 @@ public class CodexGuardianPlugin extends Plugin
 	@Inject
 	private CodexGuardianConfig config;
 
+	/** The optional local record of what the plugin read and decided. */
+	private FieldNotes notes;
+
 	@Inject
 	private PerilVignette vignette;
 
@@ -246,6 +250,11 @@ public class CodexGuardianPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
+		notes = new FieldNotes(this::getPluginDirectory, gson);
+		if (config.fieldNotes())
+		{
+			notes.open();
+		}
 		assessor = new PerilAssessor(config.foodReserve());
 		panel = new GuardianPanel(config.foodReserve(), () -> clientThread.invokeLater(this::newRun),
 			value -> clientThread.invokeLater(() -> setOneLife(value)));
@@ -285,6 +294,11 @@ public class CodexGuardianPlugin extends Plugin
 	@Override
 	protected void shutDown()
 	{
+		if (notes != null)
+		{
+			notes.shutdown();
+			notes = null;
+		}
 		clientThread.invokeLater(() ->
 		{
 			saveJournal();
@@ -420,6 +434,18 @@ public class CodexGuardianPlugin extends Plugin
 	@Subscribe
 	public void onConfigChanged(ConfigChanged event)
 	{
+		if (CodexGuardianConfig.GROUP.equals(event.getGroup()) && "fieldNotes".equals(event.getKey()) && notes != null)
+		{
+			if (config.fieldNotes())
+			{
+				notes.open();
+			}
+			else
+			{
+				notes.close();
+			}
+			return;
+		}
 		if (QUARTERMASTER_GROUP.equals(event.getGroup())
 			&& (QUARTERMASTER_KEY.equals(event.getKey()) || QUARTERMASTER_KITS_KEY.equals(event.getKey())))
 		{
@@ -1291,6 +1317,27 @@ public class CodexGuardianPlugin extends Plugin
 		shownSituation = s;
 		shownLevel = p.getLevel();
 		shownScore = p.getScore();
+		if (notes.isOpen())
+		{
+			// The danger read and what led to it, so a false alarm or a missed one can be traced.
+			com.google.gson.JsonObject n = new com.google.gson.JsonObject();
+			n.addProperty("level", String.valueOf(p.getLevel()));
+			n.addProperty("score", p.getScore());
+			n.addProperty("secondsLeft", p.getSecondsLeft());
+			com.google.gson.JsonArray reasons = new com.google.gson.JsonArray();
+			for (Peril.Reason r : p.getReasons())
+			{
+				reasons.add(r.getTopic() + ": " + r.getText() + " (" + r.getWeight() + ")");
+			}
+			n.add("reasons", reasons);
+			com.google.gson.JsonElement situation = notes.safe(s);
+			if (situation.isJsonObject())
+			{
+				situation.getAsJsonObject().remove("playerName");
+			}
+			n.add("situation", situation);
+			notes.note("peril", n);
+		}
 		GuardianPanel target = panel;
 		if (target != null)
 		{
