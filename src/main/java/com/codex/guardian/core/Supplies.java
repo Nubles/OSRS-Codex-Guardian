@@ -52,7 +52,7 @@ public final class Supplies
 	private static final Map<String, Integer> TWO_BITE = new HashMap<>();
 	/** Teleports that still work up to level 30 Wilderness; everything else stops at 20. */
 	private static final String[] LEVEL_30 = {"amulet of glory", "amulet of eternal glory", "combat bracelet",
-		"skills necklace", "ring of wealth", "royal seed pod"};
+		"skills necklace", "ring of wealth", "slayer ring", "royal seed pod"};
 	/** Charged jewellery and tablets that take you somewhere safe. */
 	private static final String[] TELEPORT_JEWELLERY = {"amulet of glory", "amulet of eternal glory", "combat bracelet",
 		"skills necklace", "ring of wealth", "ring of dueling", "games necklace", "necklace of passage", "digsite pendant",
@@ -78,30 +78,32 @@ public final class Supplies
 	static
 	{
 		food(1, "anchovies");
-		food(3, "shrimps", "cooked chicken", "cooked meat", "cooked rabbit");
-		food(4, "sardine", "cake", "2/3 cake", "slice of cake", "chocolate slice");
-		food(5, "bread", "herring", "chocolate cake", "2/3 chocolate cake");
+		food(3, "shrimps", "cooked chicken", "cooked meat");
+		food(4, "sardine", "cake", "2/3 cake", "slice of cake", "baked potato");
+		food(5, "bread", "herring", "chocolate cake", "2/3 chocolate cake", "cooked rabbit", "chocolate slice");
 		food(6, "mackerel", "cooked slimy eel");
-		food(7, "trout", "cod", "baked potato", "cooked chompy");
-		food(8, "pike", "roast beast meat", "cooked fishcake");
-		food(9, "salmon", "cooked moonlight antelope");
-		food(10, "tuna", "spicy stew");
-		food(11, "stew", "rainbow fish", "jug of wine", "cave eel");
+		food(7, "trout", "cod");
+		food(8, "pike", "roast beast meat", "cave eel");
+		food(9, "salmon");
+		food(10, "tuna", "spicy stew", "cooked chompy");
+		food(11, "stew", "rainbow fish", "jug of wine", "cooked fishcake");
 		food(12, "lobster", "cooked sunlight antelope");
-		food(13, "bass");
-		food(14, "swordfish", "potato with butter", "chilli potato", "egg potato");
+		food(13, "bass", "cooked dashing kebbit");
+		food(14, "swordfish", "potato with butter", "chilli potato", "cooked moonlight antelope");
 		food(15, "cooked jubbly");
-		food(16, "monkfish", "potato with cheese", "cooked dashing kebbit");
+		food(16, "monkfish", "potato with cheese", "egg potato");
 		food(18, "cooked karambwan", "blighted karambwan");
-		food(19, "curry", "mushroom potato");
-		food(20, "shark", "ugthanki kebab");
+		food(19, "curry", "ugthanki kebab");
+		food(20, "shark", "mushroom potato");
 		food(21, "sea turtle");
 		food(22, "manta ray", "blighted manta ray", "tuna potato", "dark crab", "anglerfish", "blighted anglerfish");
-		twoBite(6, "meat pie", "redberry pie");
-		twoBite(7, "apple pie", "plain pizza", "garden pie");
-		twoBite(8, "meat pizza", "fish pie", "admiral pie");
+		twoBite(5, "redberry pie");
+		twoBite(6, "meat pie", "garden pie", "fish pie");
+		twoBite(7, "apple pie", "plain pizza");
+		twoBite(8, "meat pizza", "admiral pie");
 		twoBite(9, "anchovy pizza");
-		twoBite(11, "pineapple pizza", "summer pie", "wild pie", "dragonfruit pie");
+		twoBite(10, "dragonfruit pie");
+		twoBite(11, "pineapple pizza", "summer pie", "wild pie");
 	}
 
 	private Supplies()
@@ -267,7 +269,7 @@ public final class Supplies
 			// Charged and empty sceptres can share a name; without a charged id it may not work, so it is no way out.
 			if (CHARGED_SCEPTRES.contains(item.id))
 			{
-				b.escape(item.name, 20);
+				b.escape(item.name, 30);
 			}
 			return;
 		}
