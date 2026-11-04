@@ -78,7 +78,7 @@ public class SettingsTest
 				keys.add(item.keyName());
 			}
 		}
-		for (String key : new String[]{"briefings", "closeCallPercent", "foodReserve", "lowHitpointsPercent", "nameOnCard", "notifyLag", "notifyLowHitpoints", "notifyPeril", "notifyTeleportLimit", "notifyZone", "oneLife", "perilVignette", "plaqueMode", "worthOnCard"})
+		for (String key : new String[]{"briefings", "closeCallPercent", "foodReserve", "lowHitpointsPercent", "nameOnCard", "notifyLag", "notifyLowHitpoints", "notifyPeril", "notifyTeleportLimit", "notifyZone", "oneLife", "perilVignette", "pkAlarm", "pkFlash", "pkNotification", "pkTrustFriends", "plaqueMode", "worthOnCard"})
 		{
 			assertTrue(key, keys.contains(key));
 		}

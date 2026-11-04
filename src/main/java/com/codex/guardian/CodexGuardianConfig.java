@@ -4,6 +4,7 @@ import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
 import net.runelite.client.config.ConfigSection;
+import net.runelite.client.config.Notification;
 import net.runelite.client.config.Range;
 import net.runelite.client.config.Units;
 
@@ -50,14 +51,69 @@ public interface CodexGuardianConfig extends Config
 	@ConfigSection(
 		name = "Run",
 		description = "How Guardian reads your account and your run",
-		position = 2
+		position = 3
 	)
 	String run = "run";
 
 	@ConfigSection(
+		name = "Wilderness",
+		description = "The PKer alarm: only players who can attack you where you stand",
+		position = 2
+	)
+	String wilderness = "wilderness";
+
+	@ConfigItem(
+		keyName = "pkAlarm",
+		name = "PKer alarm",
+		description = "In the Wilderness, warns on the plaque when a player who can attack you right now is near, with your next move",
+		position = 1,
+		section = wilderness
+	)
+	default boolean pkAlarm()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "pkFlash",
+		name = "PKer screen flash",
+		description = "Flashes the edges of the game view while the PKer alarm is on, brighter toward the player",
+		position = 2,
+		section = wilderness
+	)
+	default boolean pkFlash()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "pkTrustFriends",
+		name = "Trust friends and clan",
+		description = "Friends, clan mates and your friends chat never set off the PKer alarm",
+		position = 3,
+		section = wilderness
+	)
+	default boolean pkTrustFriends()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "pkNotification",
+		name = "PKer notification",
+		description = "A RuneLite notification, with its sound if you set one, when a PKer comes into range or starts coming for you",
+		position = 4,
+		section = wilderness
+	)
+	default Notification pkNotification()
+	{
+		return Notification.OFF;
+	}
+
+	@ConfigSection(
 		name = "Cards",
 		description = "What goes on the seal card you save or copy",
-		position = 3
+		position = 4
 	)
 	String cards = "cards";
 
