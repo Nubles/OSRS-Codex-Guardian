@@ -41,6 +41,7 @@ Part of the **Codex** suite of RuneLite plugins, which share one look: warm ink,
 - **Plaque.** A small plaque with your hitpoints, food and way out, shown when you choose (always, or from Wary or Danger up).
 - **Entry briefings.** Walk into a boss lair, a raid, a dangerous dungeon or the Wilderness and the plaque checks your food, teleport and ring of life before the first hit lands. Walk back into somewhere you nearly died and it says so: "2 close calls here, 6 hp low".
 - **Wilderness sense.** Teleports are judged by level (most stop at 20, a glory and a few others at 30). Walk past your best teleport's reach and the plaque says so, with a notification, and counts the tiles back south to where it works again.
+- **PKer alarm.** In the Wilderness, and only there, the plaque names the players who can attack you right now: their combat level is inside your bracket at your Wilderness level, and yours inside theirs at the level they stand on. Players who cannot reach you, and your friends, clan and friends chat (a setting), never set it off. It grows stronger when they are skulled, wield a knock-out special (dragon dagger, claws, AGS, granite maul, Voidwaker, ancient godsword), step toward you, go for you, or come two at a time in multi, and says the one next move: "Teleport now: Glory works here", "Run 31 tiles south to level 30, then Glory", or, teleblocked, the tiles to the ditch. The screen edge flashes with a double beat, brighter on the side the player stands. A RuneLite notification, with your chosen sound, is off until you turn it on.
 - **Peril.** When a death could come in the next few ticks (hitpoints critical under fire, one more hit like the worst you have taken from this monster would kill you, or your hitpoints run out within about twelve seconds at this pace) the plaque says what to do, the screen edge glows red and you get a notification.
 - **Prayer and lag watch.** In a fight Guardian times how fast your prayer is falling and warns before it runs out, and it notices when game ticks arrive late while something can hurt you.
 
@@ -48,6 +49,10 @@ Part of the **Codex** suite of RuneLite plugins, which share one look: warm ink,
   <img src="docs/screenshots/5-briefing.png" width="200" alt="Entry briefing">
   <img src="docs/screenshots/6-plaque-peril.png" width="200" alt="Plaque in peril">
   <img src="docs/screenshots/7-plaque-limit.png" width="200" alt="Past your teleport's reach">
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/12-pker-alarm.png" width="480" alt="The PKer alarm: two PKers in multi, one skulled with dragon claws">
 </p>
 
 <p align="center">
@@ -61,6 +66,9 @@ Part of the **Codex** suite of RuneLite plugins, which share one look: warm ink,
 | Show plaque | Wary or worse | When the in-game plaque is shown. |
 | Entry briefings | On | Checks food, way out and saving grace as you walk into a dangerous place. |
 | Peril glow | On | The red glow at the edge of the game view while you are in peril. |
+| PKer alarm, PKer screen flash | On | The Wilderness alarm on the plaque and at the screen edge. Off the Wilderness it never shows. |
+| Trust friends and clan | On | Friends, clan mates and your friends chat never set off the PKer alarm. |
+| PKer notification | Off | A RuneLite notification (sound, flash, tray) when a PKer comes into range or starts coming for you. |
 | Notify in peril, on low hitpoints, past teleport range, lag in danger | On | Notifications for each. "Notify on dangerous places" is off by default. |
 | Food for danger | 80 | How many hitpoints of food Guardian wants you carrying into danger. |
 | Close call at | 20% | How low your hitpoints must fall, and you survive, for a close call. |
@@ -83,7 +91,7 @@ Guardian works on its own. With these installed it knows more, and only ever rea
 
 ## Privacy and rules
 
-Guardian only reads what the client already shows you: your stats, the protection prayers you have on, inventory and worn items, your position, who is attacking you, the game's "You have been frozen!" line and which items you click to teleport (the click itself goes through untouched). It warns about situations in general and never about what a particular boss is about to do. It does not click, change menus, send chat or touch the network. The journal, hit memory and inquests are saved per account in your RuneLite profile and never leave your computer. If a saved journal, hit memory or one-life choice is ever damaged, or holds something only a newer Guardian understands, Guardian keeps every part it can read and keeps the saved text aside (as `journalUnreadable`, `hitMemoryUnreadable`, `inquestsV1Unreadable` or `oneLifeAccountUnreadable`) rather than writing over it.
+Guardian only reads what the client already shows you: your stats, the protection prayers you have on, inventory and worn items, your position, who is attacking you, the combat level, skull, weapon and position of players near you in the Wilderness, the game's "You have been frozen!" line and which items you click to teleport (the click itself goes through untouched). It warns about situations in general and never about what a particular boss is about to do. It does not click, change menus, send chat or touch the network. The journal, hit memory and inquests are saved per account in your RuneLite profile and never leave your computer. If a saved journal, hit memory or one-life choice is ever damaged, or holds something only a newer Guardian understands, Guardian keeps every part it can read and keeps the saved text aside (as `journalUnreadable`, `hitMemoryUnreadable`, `inquestsV1Unreadable` or `oneLifeAccountUnreadable`) rather than writing over it.
 
 ## Development
 

@@ -12,6 +12,7 @@ import com.codex.guardian.core.Lag;
 import com.codex.guardian.core.OneLife;
 import com.codex.guardian.core.Peril;
 import com.codex.guardian.core.PerilAssessor;
+import com.codex.guardian.core.PkWatch;
 import com.codex.guardian.core.PlaceMemory;
 import com.codex.guardian.core.Readiness;
 import com.codex.guardian.core.Risk;
@@ -68,6 +69,11 @@ import net.runelite.api.ItemContainer;
 import net.runelite.api.NPC;
 import net.runelite.api.Player;
 import net.runelite.api.Skill;
+import net.runelite.api.SkullIcon;
+import net.runelite.api.PlayerComposition;
+import net.runelite.api.Perspective;
+import net.runelite.api.coords.LocalPoint;
+import net.runelite.api.kit.KitType;
 import net.runelite.api.WorldType;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.ActorDeath;
@@ -140,6 +146,8 @@ public class CodexGuardianPlugin extends Plugin
 	/** About ten seconds. */
 	private static final int BRIEFING_TICKS = 17;
 	private static final int PERIL_NOTIFY_COOLDOWN_TICKS = 25;
+	/** Ticks between PKer notifications that are not a step up to danger: about thirty seconds. */
+	private static final int PK_NOTIFY_COOLDOWN_TICKS = 50;
 	private static final int VENOM_THRESHOLD = 1_000_000;
 	/** Tele Block's varbit counts down past 100 while it lasts; 100 and under is the immunity after it ends. */
 	private static final int TELEBLOCK_ACTIVE_ABOVE = 100;
@@ -181,6 +189,10 @@ public class CodexGuardianPlugin extends Plugin
 	private final DamageLog damage = new DamageLog();
 	private final CloseCallWatch closeCalls = new CloseCallWatch();
 	private final Lag lag = new Lag();
+	/** The Wilderness PKer alarm: who can attack you where you stand, and the next move. */
+	private final PkWatch pkWatch = new PkWatch();
+	private PkWatch.Strength lastPkStrength = PkWatch.Strength.NONE;
+	private int pkNotifyCooldown;
 	/** How fast prayer is draining, measured from the points shown, for how long it will last. */
 	private final PrayerWatch prayerWatch = new PrayerWatch();
 	/** The last minute of hitpoints, hits, food and potions, cut into a replay when a close call ends or a death comes. */
@@ -317,6 +329,7 @@ public class CodexGuardianPlugin extends Plugin
 		clientToolbar.removeNavigation(navButton);
 		overlay.setView(null);
 		vignette.setActive(false);
+		vignette.setFlash(null);
 		panel = null;
 		resetSession();
 	}
@@ -341,6 +354,9 @@ public class CodexGuardianPlugin extends Plugin
 		lastEscapeOk = false;
 		lastLevel = Peril.Level.CALM;
 		lowHitpointsNotified = false;
+		pkWatch.reset();
+		lastPkStrength = PkWatch.Strength.NONE;
+		pkNotifyCooldown = 0;
 		lastHitSource = null;
 		lag.reset();
 		recorder.clear();
@@ -417,6 +433,7 @@ public class CodexGuardianPlugin extends Plugin
 			resetSession();
 			overlay.setView(null);
 			vignette.setActive(false);
+			vignette.setFlash(null);
 			publishSituation(Situation.loggedOut(), Peril.calm());
 		}
 		else if (state == GameState.LOGGED_IN)
@@ -671,6 +688,7 @@ public class CodexGuardianPlugin extends Plugin
 			}
 		}
 		Peril p = assessor.assess(s);
+		PkWatch.Alarm pk = watchPkers(local, s);
 		situation = s;
 		peril = p;
 
@@ -685,7 +703,7 @@ public class CodexGuardianPlugin extends Plugin
 		watchWilderness(s);
 		watchLag(s, now);
 		alert(s, p);
-		updateOverlays(s, p);
+		updateOverlays(s, p, pk);
 		publishSituation(s, p);
 
 		ticksSincePublish++;
@@ -1190,9 +1208,10 @@ public class CodexGuardianPlugin extends Plugin
 		}
 	}
 
-	private void updateOverlays(Situation s, Peril p)
+	private void updateOverlays(Situation s, Peril p, PkWatch.Alarm pk)
 	{
 		vignette.setActive(config.perilVignette() && p.getLevel() == Peril.Level.PERIL);
+		vignette.setFlash(config.pkFlash() && pk.isActive() ? pkFlash(pk) : null);
 
 		WardOverlay.Briefing briefing = null;
 		if (briefingTicks > 0)
@@ -1229,7 +1248,127 @@ public class CodexGuardianPlugin extends Plugin
 		String escape = escapeOk ? shortName(r.getBestEscape()) : s.isTeleblocked() ? "Teleblocked"
 			: r.hasEscape() ? "Teleport blocked" : "No way out";
 		overlay.setView(new WardOverlay.View(p.getLevel(), s.getHitpoints(), s.getMaxHitpoints(), supplies, escape, escapeOk,
-			showPlaque, briefing, briefing == null || p.getLevel() == Peril.Level.PERIL ? Advice.now(s, p) : null));
+			showPlaque, briefing, briefing == null || p.getLevel() == Peril.Level.PERIL ? Advice.now(s, p) : null,
+			WardOverlay.Pk.of(pk, PkWatch.bracket(s.getCombatLevel(), pkWildernessLevel(s)))));
+	}
+
+	/**
+	 * The PKer alarm for this tick: every player in view who could attack you where you both stand, weighed and
+	 * with your next move. Off the Wilderness, or with the alarm off, it says nothing. It only reads: it never acts.
+	 */
+	private PkWatch.Alarm watchPkers(Player local, Situation s)
+	{
+		if (pkNotifyCooldown > 0)
+		{
+			pkNotifyCooldown--;
+		}
+		int wild = pkWildernessLevel(s);
+		WorldPoint here = local.getWorldLocation();
+		if (!config.pkAlarm() || wild <= 0 || here == null || pkSafeSpot())
+		{
+			pkWatch.reset();
+			lastPkStrength = PkWatch.Strength.NONE;
+			return pkWatch.getLast();
+		}
+		boolean pvpWorld = WorldType.isPvpWorld(client.getWorldType());
+		boolean trust = config.pkTrustFriends();
+		List<PkWatch.Sighting> seen = new ArrayList<>();
+		for (Player other : client.getTopLevelWorldView().players())
+		{
+			if (other == null || other == local || other.getName() == null)
+			{
+				continue;
+			}
+			WorldPoint there = other.getWorldLocation();
+			if (there == null || there.getPlane() != here.getPlane())
+			{
+				continue;
+			}
+			int theirWild = Zones.wildernessLevel(there.getX(), there.getY());
+			if (theirWild > 0 && pvpWorld)
+			{
+				theirWild += PkWatch.PVP_WORLD_BONUS;
+			}
+			boolean trusted = trust && (other.isFriend() || other.isClanMember() || other.isFriendsChatMember());
+			seen.add(new PkWatch.Sighting(other.getName(), other.getCombatLevel(), theirWild, here.distanceTo(there),
+				pkSkull(other.getSkullIcon()), weapon(other), trusted, other.getInteracting() == local));
+		}
+		Readiness r = s.getReadiness();
+		PkWatch.Footing footing = new PkWatch.Footing(s.getWildernessLevel(), s.isTeleblocked(),
+			r.hasEscape() ? shortName(r.getBestEscape()) : null, r.getEscapeReach(),
+			Zones.tilesSouthTo(here.getX(), here.getY(), 20), Zones.tilesSouthTo(here.getX(), here.getY(), 30),
+			s.getTilesToDitch());
+		PkWatch.Alarm alarm = pkWatch.update(s.getCombatLevel(), wild, s.isMultiCombat(), seen, footing);
+		PkWatch.Strength strength = alarm.getStrength();
+		// A notification when someone first comes into range, and again when it gets worse; never every tick.
+		if (settled && PkWatch.shouldNotify(lastPkStrength, strength, pkNotifyCooldown))
+		{
+			notifier.notify(config.pkNotification(), "Guardian: " + alarm.headline().toLowerCase() + " ("
+				+ alarm.detail().toLowerCase() + "). " + alarm.getMove());
+			pkNotifyCooldown = PK_NOTIFY_COOLDOWN_TICKS;
+		}
+		lastPkStrength = strength;
+		return alarm;
+	}
+
+	/** Your Wilderness level for attacks: the level shown, 15 higher on a PvP world (wiki: Wilderness). */
+	private int pkWildernessLevel(Situation s)
+	{
+		int wild = s.getWildernessLevel();
+		return wild > 0 && WorldType.isPvpWorld(client.getWorldType()) ? wild + PkWatch.PVP_WORLD_BONUS : wild;
+	}
+
+	/**
+	 * True where the game's Wilderness marker says you are protected rather than giving a level ("Protection",
+	 * "Guarded", "No PvP", the words the Wilderness Player Alarm plugin also checks). Anything unrecognised keeps
+	 * the alarm on: for one life a needless warning is better than a missed one.
+	 */
+	private boolean pkSafeSpot()
+	{
+		Widget widget = client.getWidget(InterfaceID.PvpIcons.WILDERNESSLEVEL);
+		return widget != null && !widget.isHidden() && PkWatch.safeMarker(widget.getText());
+	}
+
+	/** A PK skull, with or without loot keys; the Forinthry surge and Fight Pit skulls are not. */
+	static boolean pkSkull(int icon)
+	{
+		return icon == SkullIcon.SKULL || icon == SkullIcon.SKULL_HIGH_RISK || icon == SkullIcon.SKULL_DEADMAN
+			|| icon >= SkullIcon.LOOT_KEYS_ONE && icon <= SkullIcon.LOOT_KEYS_FIVE;
+	}
+
+	/** The item in a player's weapon slot, or -1. Worn items show as their id plus ITEM_OFFSET. */
+	private static int weapon(Player player)
+	{
+		PlayerComposition look = player.getPlayerComposition();
+		int[] ids = look == null ? null : look.getEquipmentIds();
+		int slot = KitType.WEAPON.getIndex();
+		if (ids == null || slot >= ids.length || ids[slot] < PlayerComposition.ITEM_OFFSET)
+		{
+			return -1;
+		}
+		return ids[slot] - PlayerComposition.ITEM_OFFSET;
+	}
+
+	/** The flash for an alarm, blooming toward the lead player when they stand on screen. */
+	private PerilVignette.Flash pkFlash(PkWatch.Alarm pk)
+	{
+		PkWatch.Foe lead = pk.getLead();
+		java.awt.Point toward = null;
+		if (lead != null)
+		{
+			for (Player other : client.getTopLevelWorldView().players())
+			{
+				if (other != null && lead.getName().equals(other.getName()))
+				{
+					LocalPoint lp = other.getLocalLocation();
+					net.runelite.api.Point p = lp == null ? null
+						: Perspective.localToCanvas(client, lp, client.getTopLevelWorldView().getPlane());
+					toward = p == null ? null : new java.awt.Point(p.getX(), p.getY());
+					break;
+				}
+			}
+		}
+		return PerilVignette.Flash.of(pk.getStrength(), toward);
 	}
 
 	/** The briefing for the moment Guardian is announcing, or null once it no longer applies. */
