@@ -97,6 +97,25 @@ public class Segmented extends JComponent
 		return Math.max(0, Math.min(labels.length - 1, x * labels.length / w));
 	}
 
+	private java.awt.Font fitting(Graphics2D g, float seg)
+	{
+		java.awt.Font[] faces = large ? new java.awt.Font[]{getFont(), Theme.body(), Theme.small()} : new java.awt.Font[]{getFont()};
+		for (java.awt.Font face : faces)
+		{
+			FontMetrics fm = g.getFontMetrics(face);
+			boolean fits = true;
+			for (String label : labels)
+			{
+				fits &= fm.stringWidth(label) <= seg - 6;
+			}
+			if (fits)
+			{
+				return face;
+			}
+		}
+		return faces[faces.length - 1];
+	}
+
 	@Override
 	protected void paintComponent(Graphics graphics)
 	{
@@ -119,7 +138,8 @@ public class Segmented extends JComponent
 		g.setColor(Theme.GOLD_BRIGHT);
 		g.fillRect(Math.round(x + seg * 0.3f), h - 4, Math.round(seg * 0.4f), 1);
 
-		g.setFont(getFont());
+		// Five tabs in the narrow sidebar: when a bold label would touch its neighbour, the plain face is used.
+		g.setFont(fitting(g, seg));
 		FontMetrics fm = g.getFontMetrics();
 		for (int i = 0; i < labels.length; i++)
 		{

@@ -16,6 +16,9 @@ import com.codex.guardian.core.PkWatch;
 import com.codex.guardian.core.PlaceMemory;
 import com.codex.guardian.core.Readiness;
 import com.codex.guardian.core.Risk;
+import com.codex.guardian.core.RuleWatch;
+import com.codex.guardian.core.WatchRule;
+import com.codex.guardian.core.WatchRules;
 import com.codex.guardian.core.Situation;
 import com.codex.guardian.core.Supplies;
 import com.codex.guardian.core.Threat;
@@ -29,6 +32,8 @@ import com.codex.guardian.core.Zone;
 import com.codex.guardian.core.Zones;
 import com.codex.guardian.overlay.PerilVignette;
 import com.codex.guardian.overlay.WardOverlay;
+import com.codex.guardian.overlay.WatchBanner;
+import com.codex.guardian.ui.WatchView;
 import com.codex.guardian.ui.GuardianPanel;
 import com.codex.guardian.ui.Mark;
 import com.codex.guardian.ui.ShareActions;
@@ -93,6 +98,9 @@ import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.client.Notifier;
 import net.runelite.client.callback.ClientThread;
+import net.runelite.client.chat.ChatMessageBuilder;
+import net.runelite.client.chat.ChatMessageManager;
+import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ClientShutdown;
@@ -119,6 +127,12 @@ public class CodexGuardianPlugin extends Plugin
 	/** This account's inquests: the last {@link Inquests#MAX_KEPT} deaths and close calls, tick by tick. */
 	static final String INQUESTS_KEY = "inquestsV1";
 	/** The game's line when an ice spell freezes you, as RuneLite's own timers read it. */
+	/** The player's own watch rules, per account, with a version inside. */
+	static final String WATCH_KEY = "watchRulesV1";
+	/** Guardian's own chat lines start so, and are never read back as a game message a rule could match. */
+	static final String WATCH_CHAT_PREFIX = "Guardian watch: ";
+	/** A player with no animation playing has the idle animation, -1 (RuneLite's AnimationID.IDLE). */
+	private static final int IDLE_ANIMATION = -1;
 	private static final String FROZEN_MESSAGE = "You have been frozen!";
 	/** Item options that are not a teleport, on an item that can teleport. */
 	private static final String[] NOT_TELEPORTING = {"drop", "examine", "use", "wield", "wear", "remove", "destroy", "check",
@@ -184,6 +198,17 @@ public class CodexGuardianPlugin extends Plugin
 
 	@Inject
 	private PerilVignette vignette;
+
+	@Inject
+	private ChatMessageManager chatMessageManager;
+
+	private final WatchBanner banner = new WatchBanner();
+	/** This account's watch rules, or null until a profile is loaded. Client thread only. */
+	private WatchRules watchRules;
+	private final RuleWatch ruleWatch = new RuleWatch();
+	/** Ticks the player has stood still doing nothing; -1 until known. */
+	private int idleTicks = -1;
+	private WorldPoint idleSpot;
 
 	private final WardOverlay overlay = new WardOverlay();
 	private final DamageLog damage = new DamageLog();
@@ -296,6 +321,8 @@ public class CodexGuardianPlugin extends Plugin
 				copyCard(card);
 			}
 		}, config::nameOnCard, config::worthOnCard);
+		panel.setWatchActions(rules -> clientThread.invokeLater(() -> saveWatch(rules)),
+			rule -> clientThread.invokeLater(() -> fireWatch(RuleWatch.Alert.trial(rule))));
 		navButton = NavigationButton.builder()
 			.tooltip("Codex Guardian")
 			.icon(Shield.icon(16))
@@ -305,6 +332,7 @@ public class CodexGuardianPlugin extends Plugin
 		clientToolbar.addNavigation(navButton);
 		overlayManager.add(overlay);
 		overlayManager.add(vignette);
+		overlayManager.add(banner);
 		clientThread.invokeLater(() ->
 		{
 			if (client.getGameState() == GameState.LOGGED_IN)
@@ -326,6 +354,8 @@ public class CodexGuardianPlugin extends Plugin
 		});
 		overlayManager.remove(overlay);
 		overlayManager.remove(vignette);
+		overlayManager.remove(banner);
+		banner.clear();
 		clientToolbar.removeNavigation(navButton);
 		overlay.setView(null);
 		vignette.setActive(false);
@@ -371,6 +401,9 @@ public class CodexGuardianPlugin extends Plugin
 		trip = null;
 		tripDirty = true;
 		tripBriefPending = false;
+		ruleWatch.reset();
+		idleTicks = -1;
+		idleSpot = null;
 	}
 
 	/** Forgets everything read for the previous account: its one-life choice, its kit and its bank. */
@@ -391,6 +424,9 @@ public class CodexGuardianPlugin extends Plugin
 		tripDirty = true;
 		publishWorth(-1);
 		publishInquests();
+		watchRules = null;
+		ruleWatch.reset();
+		publishWatch();
 	}
 
 	@Subscribe
@@ -483,9 +519,15 @@ public class CodexGuardianPlugin extends Plugin
 			return;
 		}
 		if (!CodexGuardianConfig.GROUP.equals(event.getGroup()) || JOURNAL_KEY.equals(event.getKey())
-			|| ONE_LIFE_KEY.equals(event.getKey()) || HITS_KEY.equals(event.getKey()) || INQUESTS_KEY.equals(event.getKey()))
+			|| ONE_LIFE_KEY.equals(event.getKey()) || HITS_KEY.equals(event.getKey()) || INQUESTS_KEY.equals(event.getKey())
+			|| event.getKey() != null && event.getKey().startsWith(WATCH_KEY))
 		{
 			return;
+		}
+		if ("watchRules".equals(event.getKey()))
+		{
+			// The page says when the rules are switched off.
+			clientThread.invokeLater(this::publishWatch);
 		}
 		int reserve = config.foodReserve();
 		// Settings change on the Swing thread; the assessor and the published read belong to the client thread.
@@ -614,6 +656,7 @@ public class CodexGuardianPlugin extends Plugin
 	@Subscribe
 	public void onChatMessage(ChatMessage event)
 	{
+		watchMessage(event);
 		if ((event.getType() == ChatMessageType.GAMEMESSAGE || event.getType() == ChatMessageType.SPAM)
 			&& Text.removeTags(event.getMessage()).trim().endsWith(FROZEN_MESSAGE))
 		{
@@ -702,6 +745,7 @@ public class CodexGuardianPlugin extends Plugin
 		}
 		watchWilderness(s);
 		watchLag(s, now);
+		watchRules(local, s);
 		alert(s, p);
 		updateOverlays(s, p, pk);
 		publishSituation(s, p);
@@ -1547,6 +1591,7 @@ public class CodexGuardianPlugin extends Plugin
 		journalProfile = profile;
 		hits = loadHits(profile);
 		hitsChanged = false;
+		loadWatch(profile);
 		inquests = loadInquests(profile);
 		inquestsChanged = false;
 		publishInquests();
@@ -1587,6 +1632,130 @@ public class CodexGuardianPlugin extends Plugin
 			inquestsChanged = false;
 			configManager.setConfiguration(CodexGuardianConfig.GROUP, journalProfile, INQUESTS_KEY, gson.toJson(inquests));
 		}
+	}
+
+	private void loadWatch(String profile)
+	{
+		String json = configManager.getConfiguration(CodexGuardianConfig.GROUP, profile, WATCH_KEY);
+		SavedJson.Read<WatchRules> read = WatchRules.load(gson, json);
+		// Rules from a newer Guardian, or a damaged save, are kept aside before anything is saved over them.
+		keepAside(profile, WATCH_KEY, json, read.isDamaged());
+		watchRules = read.getValue();
+		ruleWatch.reset();
+		publishWatch();
+	}
+
+	/** Called on the client thread with the rules the player saved on the Watch page. */
+	private void saveWatch(WatchRules rules)
+	{
+		if (journalProfile == null || rules == null)
+		{
+			return;
+		}
+		watchRules = rules.copy().repair();
+		configManager.setConfiguration(CodexGuardianConfig.GROUP, journalProfile, WATCH_KEY, gson.toJson(watchRules));
+		publishWatch();
+	}
+
+	/** Hands the panel a private copy of the watch rules, whether they are on, and which are paused. */
+	private void publishWatch()
+	{
+		GuardianPanel target = panel;
+		if (target == null)
+		{
+			return;
+		}
+		WatchRules copy = watchRules == null ? null : watchRules.copy();
+		boolean on = config.watchRules();
+		java.util.Set<Integer> paused = ruleWatch.pausedIds();
+		SwingUtilities.invokeLater(() -> target.updateWatch(copy, on, paused));
+	}
+
+	/** Runs the tick rules: skills, run energy, food, items, a full pack and standing idle. */
+	private void watchRules(Player local, Situation s)
+	{
+		WorldPoint here = local.getWorldLocation();
+		boolean still = local.getAnimation() == IDLE_ANIMATION && local.getInteracting() == null
+			&& here != null && here.equals(idleSpot);
+		idleTicks = still ? idleTicks + 1 : 0;
+		idleSpot = here;
+		if (!config.watchRules() || watchRules == null || watchRules.getRules().isEmpty() || !settled)
+		{
+			return;
+		}
+		RuleWatch.Reading r = new RuleWatch.Reading(client.getTickCount())
+			.runEnergy(s.getRunEnergy())
+			.food(readiness.getFoodCount())
+			.pack(lastInventory)
+			.idleTicks(idleTicks);
+		for (Skill skill : Skill.values())
+		{
+			r.stat(skill.getName(), client.getBoostedSkillLevel(skill));
+		}
+		ItemContainer pack = client.getItemContainer(InventoryID.INV);
+		r.filledSlots(pack == null ? -1 : pack.count());
+		for (RuleWatch.Alert alert : ruleWatch.tick(watchRules, r))
+		{
+			fireWatch(alert);
+		}
+	}
+
+	/** Runs the message rules on a game message. Other players' chat is never read. */
+	private void watchMessage(ChatMessage event)
+	{
+		if (watchRules == null || !config.watchRules()
+			|| event.getType() != ChatMessageType.GAMEMESSAGE && event.getType() != ChatMessageType.SPAM)
+		{
+			return;
+		}
+		String text = Text.removeTags(event.getMessage());
+		if (text == null || text.startsWith(WATCH_CHAT_PREFIX))
+		{
+			return;
+		}
+		for (RuleWatch.Alert alert : ruleWatch.message(watchRules, text, client.getTickCount()))
+		{
+			fireWatch(alert);
+		}
+		List<WatchRule> paused = ruleWatch.takePaused();
+		for (WatchRule rule : paused)
+		{
+			chat("the rule \"" + rule.getName() + "\" is paused until you log in again: its pattern took too long.");
+		}
+		if (!paused.isEmpty())
+		{
+			publishWatch();
+		}
+	}
+
+	/** Does what a fired rule asks: a notification, a flash with its banner, a chat line. */
+	private void fireWatch(RuleWatch.Alert alert)
+	{
+		WatchRule rule = alert.getRule();
+		if (rule.isNotify())
+		{
+			notifier.notify(config.watchNotification(), "Guardian: " + alert.line());
+		}
+		if (rule.isFlash())
+		{
+			long now = System.currentTimeMillis();
+			java.awt.Color color = WatchView.color(rule.getTint());
+			vignette.flashRule(color, now);
+			banner.show(new WatchBanner.Shown(rule.getName(), alert.getDetail(), color, now));
+		}
+		if (rule.isChat())
+		{
+			chat(alert.line());
+		}
+	}
+
+	private void chat(String line)
+	{
+		String message = new ChatMessageBuilder()
+			.append(Theme.GOLD, WATCH_CHAT_PREFIX)
+			.append(line)
+			.build();
+		chatMessageManager.queue(QueuedMessage.builder().type(ChatMessageType.GAMEMESSAGE).runeLiteFormattedMessage(message).build());
 	}
 
 	private Inquests loadInquests(String profile)

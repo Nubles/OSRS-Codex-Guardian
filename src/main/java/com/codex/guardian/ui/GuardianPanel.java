@@ -24,21 +24,23 @@ import net.runelite.client.ui.PluginPanel;
 /**
  * The Guardian side panel: the hitpoint crest, then four pages. Ward is the live read,
  * Journal is the story of the run, Perils is the run in numbers, and Inquest takes each death and close call
- * apart tick by tick, after the fact.
+ * apart tick by tick, after the fact. Watch holds the player's own alarms.
  */
 public class GuardianPanel extends PluginPanel
 {
-	private static final String[] TABS = {"ward", "journal", "perils", "inquest"};
+	private static final String[] TABS = {"ward", "journal", "perils", "inquest", "watch"};
 	private static final String CONFIRM = "Click again to start over";
 
 	private final WardCrest crest = new WardCrest();
-	private final Segmented tabs = new Segmented(true, "Ward", "Journal", "Perils", "Inquest");
+	private final Segmented tabs = new Segmented(true, "Ward", "Journal", "Perils", "Inquest", "Watch");
 	private final CardLayout cards = new CardLayout();
 	private final JPanel content = new JPanel(cards);
 	private final JScrollPane ward = scroller();
 	private final JScrollPane journalView = scroller();
 	private final JScrollPane perils = scroller();
 	private final JScrollPane inquestView = scroller();
+	private final JScrollPane watchPage = scroller();
+	private final WatchView watch = new WatchView(this::rebuildWatch);
 	private final PerilGauge gauge = new PerilGauge();
 	private final Runnable onNewRun;
 	private final Consumer<Boolean> onOneLife;
@@ -100,6 +102,7 @@ public class GuardianPanel extends PluginPanel
 		content.add(journalView, TABS[1]);
 		content.add(perils, TABS[2]);
 		content.add(inquestView, TABS[3]);
+		content.add(watchPage, TABS[4]);
 		add(content, BorderLayout.CENTER);
 
 		tabs.onChange(tab ->
@@ -111,6 +114,7 @@ public class GuardianPanel extends PluginPanel
 		});
 		rebuildWard();
 		rebuildJournal();
+		rebuildWatch();
 	}
 
 	private static JScrollPane scroller()
@@ -158,7 +162,7 @@ public class GuardianPanel extends PluginPanel
 		crest.update(situation, peril, journal);
 	}
 
-	/** Shows a tab as a click on it would: 0 Ward, 1 Journal, 2 Perils, 3 Inquest. */
+	/** Shows a tab as a click on it would: 0 Ward, 1 Journal, 2 Perils, 3 Inquest, 4 Watch. */
 	void selectTab(int tab)
 	{
 		tabs.setSelected(tab, true);
@@ -237,6 +241,40 @@ public class GuardianPanel extends PluginPanel
 	{
 		openInquest = at;
 		rebuildInquest();
+	}
+
+	/** Where the Watch page sends the account's rules on Save, and a rule to fire once on Try. */
+	public void setWatchActions(Consumer<com.codex.guardian.core.WatchRules> onSave,
+		Consumer<com.codex.guardian.core.WatchRule> onTry)
+	{
+		watch.setActions(onSave, onTry);
+	}
+
+	/**
+	 * Called on the Swing thread with a private copy of this account's watch rules (null when logged out), whether
+	 * they are switched on in the settings, and the rules paused this session for a pattern that took too long.
+	 */
+	public void updateWatch(com.codex.guardian.core.WatchRules rules, boolean enabled, java.util.Set<Integer> paused)
+	{
+		watch.setRules(rules, rules != null, enabled, paused);
+		rebuildWatch();
+	}
+
+	/** The Watch page's editor, for tests. */
+	WatchView watchView()
+	{
+		return watch;
+	}
+
+	/** The Watch page as it is now built, for tests and pictures. */
+	java.awt.Component watchPage()
+	{
+		return watchPage.getViewport().getView();
+	}
+
+	private void rebuildWatch()
+	{
+		replace(watchPage, watch.build());
 	}
 
 	/** Where a click on "Mark as fallen" goes, with the time of the death it was on. */

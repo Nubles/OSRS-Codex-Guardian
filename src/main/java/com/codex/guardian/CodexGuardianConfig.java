@@ -294,4 +294,35 @@ public interface CodexGuardianConfig extends Config
 	{
 		return false;
 	}
+
+	@ConfigSection(
+		name = "Watch rules",
+		description = "Your own alarms, written on the panel's Watch page",
+		position = 5
+	)
+	String watch = "watch";
+
+	@ConfigItem(
+		keyName = "watchRules",
+		name = "Watch rules",
+		description = "Runs the alarms you write on the Watch page; turned off, they are kept but none of them fire",
+		position = 1,
+		section = watch
+	)
+	default boolean watchRules()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "watchNotification",
+		name = "Watch rule notification",
+		description = "How a watch rule's notification reaches you: its sound, tray message and window flash",
+		position = 2,
+		section = watch
+	)
+	default Notification watchNotification()
+	{
+		return Notification.ON;
+	}
 }
