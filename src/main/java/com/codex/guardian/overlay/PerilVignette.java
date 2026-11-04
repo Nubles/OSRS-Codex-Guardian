@@ -26,6 +26,9 @@ public class PerilVignette extends Overlay
 	private final Client client;
 	private volatile boolean active;
 	private volatile Flash flash;
+	/** A watch rule's flash and the time it ends, or null. */
+	private volatile Flash ruleFlash;
+	private volatile long ruleFlashUntil;
 
 	/** A PKer flash: its color, how hard it beats, and where on the canvas the player stands (or null). */
 	public static final class Flash
@@ -77,10 +80,29 @@ public class PerilVignette extends Overlay
 		this.flash = flash;
 	}
 
+	/** How long a watch rule's flash lasts: two of the alarm's double beats. */
+	public static final long RULE_FLASH_MILLIS = 2400;
+
+	/** Flashes the edges once for a watch rule, in its colour, unless peril or the PKer alarm holds them. */
+	public void flashRule(Color color, long now)
+	{
+		ruleFlash = color == null ? null : new Flash(color, 0.55, null);
+		ruleFlashUntil = now + RULE_FLASH_MILLIS;
+	}
+
 	@Override
 	public Dimension render(Graphics2D g)
 	{
 		Flash f = flash;
+		if (f == null && ruleFlash != null)
+		{
+			// Peril and the PKer alarm matter more than a player's own rule, so the rule only shows when they are quiet.
+			f = System.currentTimeMillis() < ruleFlashUntil ? ruleFlash : null;
+			if (f == null)
+			{
+				ruleFlash = null;
+			}
+		}
 		if (!active && f == null)
 		{
 			return null;

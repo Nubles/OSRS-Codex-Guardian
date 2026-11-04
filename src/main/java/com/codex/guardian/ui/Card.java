@@ -73,6 +73,11 @@ public class Card extends JPanel
 			@Override
 			public void mouseReleased(MouseEvent e)
 			{
+				// A control on the card (a switch) that handled the click itself has consumed it.
+				if (e.isConsumed())
+				{
+					return;
+				}
 				if (SwingUtilities.isLeftMouseButton(e) && onClick != null
 					&& contains(SwingUtilities.convertPoint(e.getComponent(), e.getPoint(), Card.this)))
 				{

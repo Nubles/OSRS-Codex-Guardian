@@ -36,6 +36,22 @@ Part of the **Codex** suite of RuneLite plugins, which share one look: warm ink,
   <img src="docs/screenshots/8-before-you-go.png" width="225" alt="Before you go">
 </p>
 
+- **Watch.** Your own alarms, kept for this account (up to 12). Each rule has a trigger, what to do, and a rest before it may fire again:
+  - **Triggers:** a game message that contains some words, or matches a pattern (a Java regex); a skill falling below a level (Hitpoints, Prayer or any other); run energy falling below a percentage; food falling below a number of pieces (food as Guardian reads your pack); an item's count falling below a number (a potion counts in every dose); a full backpack; standing idle for some seconds.
+  - **Actions:** a RuneLite notification (with its own sound setting), a flash at the edge of the game view in gold, teal, ember or blood with a small banner naming the rule, and a line in your chat.
+  - A rule fires as its moment comes, not for as long as it lasts: prayer must have been above the number and fall below it. It then rests; if the moment comes again while it rests, it fires when the rest ends, provided it still holds. Only game messages are read, never anyone's chat.
+  - Ready-made rules for what Guardian already watches: prayer running low, food running low, Tele Blocked, frozen, ring of life used, backpack full. Add one with a click and change it as you like.
+  - **Try it** fires a rule once so you can see and hear it before you rely on it. A pattern that does not read is told in the editor and never saved; one that takes too long on a message is stopped after a fixed amount of work and paused, so a rule can never freeze the game.
+
+<p align="center">
+  <img src="docs/screenshots/13-watch-rules.png" width="225" alt="Watch rules">
+  <img src="docs/screenshots/14-watch-editor.png" width="225" alt="Writing a watch rule">
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/15-watch-alert.png" width="480" alt="A watch rule's flash and banner">
+</p>
+
 ## In the game
 
 - **Plaque.** A small plaque with your hitpoints, food and way out, shown when you choose (always, or from Wary or Danger up).
@@ -72,6 +88,8 @@ Part of the **Codex** suite of RuneLite plugins, which share one look: warm ink,
 | Notify in peril, on low hitpoints, past teleport range, lag in danger | On | Notifications for each. "Notify on dangerous places" is off by default. |
 | Food for danger | 80 | How many hitpoints of food Guardian wants you carrying into danger. |
 | Close call at | 20% | How low your hitpoints must fall, and you survive, for a close call. |
+| Watch rules | On | Runs the alarms you write on the Watch page. You start with none; turned off, they are kept but none fire. |
+| Watch rule notification | On | How a watch rule's notification reaches you: sound, tray message, window flash. |
 | Name on cards | On | Your character's name on the seal card. |
 | Worth on cards | Off | Your worth from Codex Ledger on the seal card; the seal in the panel shows it either way. |
 
