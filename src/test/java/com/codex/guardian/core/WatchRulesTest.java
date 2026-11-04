@@ -349,6 +349,11 @@ public class WatchRulesTest
 			tooLong.append('a');
 		}
 		assertFalse(SafeRegex.compile(tooLong.toString()).isOk());
+		assertFalse(SafeRegex.compile("a{2000}").isOk());
+		assertFalse(SafeRegex.compile("a{1,99999}").isOk());
+		assertTrue(SafeRegex.compile("a{3}").isOk());
+		assertTrue(SafeRegex.compile("a{2,5}b").isOk());
+		assertTrue(SafeRegex.compile("\\{99999\\}").isOk());
 		assertFalse(SafeRegex.compile("").isOk());
 		assertFalse(SafeRegex.compile(null).isOk());
 	}

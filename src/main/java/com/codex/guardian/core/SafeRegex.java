@@ -69,6 +69,11 @@ public final class SafeRegex
 		{
 			return new Compiled(null, "Keep it under " + MAX_PATTERN + " characters");
 		}
+		String repeat = badRepeat(text);
+		if (repeat != null)
+		{
+			return new Compiled(null, repeat);
+		}
 		try
 		{
 			return new Compiled(Pattern.compile(text, Pattern.CASE_INSENSITIVE), null);
@@ -82,6 +87,35 @@ public final class SafeRegex
 		{
 			return new Compiled(null, "Does not read");
 		}
+	}
+
+	/** Largest {n} or {n,m} count a pattern may use. */
+	public static final int MAX_REPEAT = 1000;
+
+	private static final Pattern REPEAT = Pattern.compile("(?<!\\\\)\\{(\\d+)(?:,(\\d*))?\\}");
+
+	/**
+	 * Checks repetition counts ourselves, so every Java version gives the same answer: Java 11 reads an
+	 * overflowing count like {99999999999} without complaint, and huge counts are slow to match anyway.
+	 */
+	static String badRepeat(String text)
+	{
+		java.util.regex.Matcher m = REPEAT.matcher(text);
+		while (m.find())
+		{
+			String min = m.group(1);
+			String max = m.group(2);
+			if (min.length() > 4 || Integer.parseInt(min) > MAX_REPEAT
+				|| (max != null && !max.isEmpty() && (max.length() > 4 || Integer.parseInt(max) > MAX_REPEAT)))
+			{
+				return "Repeat counts go up to " + MAX_REPEAT;
+			}
+			if (max != null && !max.isEmpty() && Integer.parseInt(max) < Integer.parseInt(min))
+			{
+				return "The second count is smaller than the first";
+			}
+		}
+		return null;
 	}
 
 	/** Looks for the pattern anywhere in the message, within the budget. */
