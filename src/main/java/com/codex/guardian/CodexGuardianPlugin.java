@@ -4,6 +4,8 @@ import com.codex.guardian.core.Advice;
 import com.codex.guardian.core.CloseCallWatch;
 import com.codex.guardian.core.DamageLog;
 import com.codex.guardian.core.HitMemory;
+import com.codex.guardian.core.Inquest;
+import com.codex.guardian.core.Inquests;
 import com.codex.guardian.core.Journal;
 import com.codex.guardian.core.KitPlan;
 import com.codex.guardian.core.Lag;
@@ -54,6 +56,8 @@ import javax.imageio.ImageIO;
 import javax.inject.Inject;
 import javax.swing.SwingUtilities;
 import net.runelite.api.Actor;
+import net.runelite.api.ChatMessageType;
+import net.runelite.api.Prayer;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.Hitsplat;
@@ -67,6 +71,7 @@ import net.runelite.api.Skill;
 import net.runelite.api.WorldType;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.ActorDeath;
+import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.HitsplatApplied;
@@ -105,6 +110,13 @@ public class CodexGuardianPlugin extends Plugin
 	private static final String JOURNAL_KEY = "journal";
 	/** The hardest each monster has hit this account, per profile; kept apart from the journal so it outlives a new run. */
 	static final String HITS_KEY = "hitMemory";
+	/** This account's inquests: the last {@link Inquests#MAX_KEPT} deaths and close calls, tick by tick. */
+	static final String INQUESTS_KEY = "inquestsV1";
+	/** The game's line when an ice spell freezes you, as RuneLite's own timers read it. */
+	private static final String FROZEN_MESSAGE = "You have been frozen!";
+	/** Item options that are not a teleport, on an item that can teleport. */
+	private static final String[] NOT_TELEPORTING = {"drop", "examine", "use", "wield", "wear", "remove", "destroy", "check",
+		"uncharge", "withdraw", "deposit", "empty", "charge", "toggle", "take", "store", "fill", "inspect", "trade"};
 	/** A lag warning comes back at most once a minute, so a bad evening is not a stream of notifications. */
 	private static final int LAG_COOLDOWN_TICKS = 100;
 	/** Hits this many ticks after using an item that hurts are not credited to a monster. */
@@ -173,6 +185,14 @@ public class CodexGuardianPlugin extends Plugin
 	private final PrayerWatch prayerWatch = new PrayerWatch();
 	/** The last minute of hitpoints, hits, food and potions, cut into a replay when a close call ends or a death comes. */
 	private final Replay.Recorder recorder = new Replay.Recorder();
+	/** The last ticks in full (prayer, protections, hits by source, supplies, conditions), frozen into an inquest. */
+	private final Inquest.Recorder inquestRecorder = new Inquest.Recorder();
+	private Inquests inquests;
+	private boolean inquestsChanged;
+	/** A freeze holds the player from the tick it lands until they move off the tile it caught them on. */
+	private boolean frozen;
+	private int frozenTick;
+	private WorldPoint frozenAt;
 	private HitMemory hits = new HitMemory();
 	private boolean hitsChanged;
 	private Lag.State lastLag = Lag.State.STEADY;
@@ -324,6 +344,9 @@ public class CodexGuardianPlugin extends Plugin
 		lastHitSource = null;
 		lag.reset();
 		recorder.clear();
+		inquestRecorder.clear();
+		frozen = false;
+		frozenAt = null;
 		prayerWatch.reset();
 		lastLag = Lag.State.STEADY;
 		accountType = -1;
@@ -340,6 +363,8 @@ public class CodexGuardianPlugin extends Plugin
 		accountOneLife = false;
 		hits = new HitMemory();
 		hitsChanged = false;
+		inquests = null;
+		inquestsChanged = false;
 		kitPlan = null;
 		kitItemNames.clear();
 		bankGraces.clear();
@@ -349,6 +374,7 @@ public class CodexGuardianPlugin extends Plugin
 		trip = null;
 		tripDirty = true;
 		publishWorth(-1);
+		publishInquests();
 	}
 
 	@Subscribe
@@ -440,7 +466,7 @@ public class CodexGuardianPlugin extends Plugin
 			return;
 		}
 		if (!CodexGuardianConfig.GROUP.equals(event.getGroup()) || JOURNAL_KEY.equals(event.getKey())
-			|| ONE_LIFE_KEY.equals(event.getKey()) || HITS_KEY.equals(event.getKey()))
+			|| ONE_LIFE_KEY.equals(event.getKey()) || HITS_KEY.equals(event.getKey()) || INQUESTS_KEY.equals(event.getKey()))
 		{
 			return;
 		}
@@ -519,6 +545,7 @@ public class CodexGuardianPlugin extends Plugin
 		damage.hit(amount);
 		String source = sourceOf(hitsplat.getHitsplatType(), local);
 		recorder.hit(amount, source);
+		inquestRecorder.hit(amount, source, overTime(hitsplat.getHitsplatType()) ? source : null, maxHit(hitsplat.getHitsplatType()));
 		lastHitSource = source;
 		rememberHit(hitsplat.getHitsplatType(), amount, local);
 		if (journal != null)
@@ -535,6 +562,49 @@ public class CodexGuardianPlugin extends Plugin
 		{
 			selfHarmTick = client.getTickCount();
 		}
+		if (teleportAttempt(event.getMenuOption(), event.getMenuTarget()))
+		{
+			inquestRecorder.teleport();
+		}
+	}
+
+	/**
+	 * A click that tries to teleport, for an inquest: casting a teleport spell, or an option on an item Guardian
+	 * counts as a way out other than the ones that move, check or drop it. Read only; the click goes through as it is.
+	 */
+	static boolean teleportAttempt(String option, String target)
+	{
+		String op = option == null ? "" : Text.removeTags(option).trim().toLowerCase(java.util.Locale.ENGLISH);
+		String what = target == null ? "" : Text.removeTags(target).trim();
+		if (op.isEmpty() || what.isEmpty())
+		{
+			return false;
+		}
+		if (op.equals("cast"))
+		{
+			return what.toLowerCase(java.util.Locale.ENGLISH).contains("teleport");
+		}
+		for (String not : NOT_TELEPORTING)
+		{
+			if (op.startsWith(not))
+			{
+				return false;
+			}
+		}
+		return Supplies.isWayOut(what);
+	}
+
+	@Subscribe
+	public void onChatMessage(ChatMessage event)
+	{
+		if ((event.getType() == ChatMessageType.GAMEMESSAGE || event.getType() == ChatMessageType.SPAM)
+			&& Text.removeTags(event.getMessage()).trim().endsWith(FROZEN_MESSAGE))
+		{
+			Player local = client.getLocalPlayer();
+			frozen = true;
+			frozenTick = client.getTickCount();
+			frozenAt = local == null ? null : local.getWorldLocation();
+		}
 	}
 
 	@Subscribe
@@ -546,6 +616,8 @@ public class CodexGuardianPlugin extends Plugin
 		}
 		// The killing blow is still waiting for the next tick; record it now so the replay ends at zero.
 		recorder.tick(0, situation.getMaxHitpoints(), readiness.getFoodCount(), Supplies.potionDoses(lastInventory));
+		inquestRecorder.deathTick();
+		keepInquest(inquestRecorder.death(place(situation), Inquest.Kit.of(readiness), System.currentTimeMillis()));
 		if (situation.isOneLife() && Zones.isUnconfirmedSafe(situation.getZone()))
 		{
 			// A minigame on a Hardcore World: the advice treated it as deadly, but the record must not say the run
@@ -582,6 +654,12 @@ public class CodexGuardianPlugin extends Plugin
 
 		Situation s = read(local);
 		recorder.tick(s.getHitpoints(), s.getMaxHitpoints(), readiness.getFoodCount(), Supplies.potionDoses(lastInventory));
+		if (frozen && client.getTickCount() != frozenTick && !Objects.equals(local.getWorldLocation(), frozenAt))
+		{
+			// As RuneLite's own freeze timer assumes: moving means the freeze is over.
+			frozen = false;
+		}
+		inquestRecorder.tick(Inquest.Frame.of(s, protections(), frozen, Supplies.potionDoses(lastInventory)));
 		updateTrip();
 		if (tripBriefPending)
 		{
@@ -993,11 +1071,13 @@ public class CodexGuardianPlugin extends Plugin
 		if (closeCalls.isActive())
 		{
 			recorder.mark();
+			inquestRecorder.mark();
 		}
 		if (r != null)
 		{
 			journal.closeCall(r.lowest, s.getMaxHitpoints(), r.place, r.source, recorder.closeCall(), now);
 			journalChanged = true;
+			keepInquest(inquestRecorder.closeCall(r.place, Inquest.Kit.of(s.getReadiness()), now));
 		}
 	}
 
@@ -1328,6 +1408,9 @@ public class CodexGuardianPlugin extends Plugin
 		journalProfile = profile;
 		hits = loadHits(profile);
 		hitsChanged = false;
+		inquests = loadInquests(profile);
+		inquestsChanged = false;
+		publishInquests();
 		String choice = configManager.getConfiguration(CodexGuardianConfig.GROUP, profile, ONE_LIFE_KEY);
 		// A choice in a shape this version does not read is replaced below; the text is kept aside first.
 		keepAside(profile, ONE_LIFE_KEY, choice, choice != null && !choice.trim().isEmpty() && !OneLife.readable(choice));
@@ -1359,6 +1442,84 @@ public class CodexGuardianPlugin extends Plugin
 		{
 			hitsChanged = false;
 			configManager.setConfiguration(CodexGuardianConfig.GROUP, journalProfile, HITS_KEY, gson.toJson(hits));
+		}
+		if (inquestsChanged && inquests != null)
+		{
+			inquestsChanged = false;
+			configManager.setConfiguration(CodexGuardianConfig.GROUP, journalProfile, INQUESTS_KEY, gson.toJson(inquests));
+		}
+	}
+
+	private Inquests loadInquests(String profile)
+	{
+		String json = configManager.getConfiguration(CodexGuardianConfig.GROUP, profile, INQUESTS_KEY);
+		SavedJson.Read<Inquests> read = Inquests.load(gson, json);
+		keepAside(profile, INQUESTS_KEY, json, read.isDamaged());
+		return read.getValue();
+	}
+
+	/** Keeps a new inquest, saves it at once (it is the record of what may have ended the run) and shows it. */
+	private void keepInquest(Inquest inquest)
+	{
+		if (inquest == null || inquests == null)
+		{
+			return;
+		}
+		inquests.add(inquest);
+		inquestsChanged = true;
+		saveJournal();
+		publishInquests();
+	}
+
+	/** Hands the panel a private copy of the inquests. */
+	private void publishInquests()
+	{
+		GuardianPanel target = panel;
+		if (target == null)
+		{
+			return;
+		}
+		Inquests copy = inquests == null ? null : Inquests.load(gson, gson.toJson(inquests)).getValue();
+		SwingUtilities.invokeLater(() -> target.updateInquests(copy));
+	}
+
+	/** The protection prayers on now, as an inquest's mask. */
+	private int protections()
+	{
+		return (client.isPrayerActive(Prayer.PROTECT_FROM_MELEE) ? Inquest.MELEE : 0)
+			| (client.isPrayerActive(Prayer.PROTECT_FROM_MISSILES) ? Inquest.MISSILES : 0)
+			| (client.isPrayerActive(Prayer.PROTECT_FROM_MAGIC) ? Inquest.MAGIC : 0);
+	}
+
+	private static boolean overTime(int type)
+	{
+		switch (type)
+		{
+			case HitsplatID.POISON:
+			case HitsplatID.VENOM:
+			case HitsplatID.DISEASE:
+			case HitsplatID.BURN:
+			case HitsplatID.BLEED:
+				return true;
+			default:
+				return false;
+		}
+	}
+
+	/** The game draws a max hit with its own hitsplat. */
+	private static boolean maxHit(int type)
+	{
+		switch (type)
+		{
+			case HitsplatID.DAMAGE_MAX_ME:
+			case HitsplatID.DAMAGE_MAX_ME_CYAN:
+			case HitsplatID.DAMAGE_MAX_ME_ORANGE:
+			case HitsplatID.DAMAGE_MAX_ME_YELLOW:
+			case HitsplatID.DAMAGE_MAX_ME_WHITE:
+			case HitsplatID.DAMAGE_MAX_ME_POISE:
+				return true;
+			default:
+				return false;
 		}
 	}
 
@@ -1623,6 +1784,7 @@ public class CodexGuardianPlugin extends Plugin
 		journal = Journal.fresh(System.currentTimeMillis());
 		closeCalls.reset();
 		recorder.unmark();
+		inquestRecorder.unmark();
 		saveJournal();
 		publishJournal();
 	}

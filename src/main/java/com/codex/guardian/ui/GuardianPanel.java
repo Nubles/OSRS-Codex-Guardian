@@ -1,6 +1,7 @@
 package com.codex.guardian.ui;
 
 import com.codex.guardian.core.HitMemory;
+import com.codex.guardian.core.Inquests;
 import com.codex.guardian.core.Journal;
 import com.codex.guardian.core.Peril;
 import com.codex.guardian.core.PlaceMemory;
@@ -21,21 +22,23 @@ import javax.swing.border.EmptyBorder;
 import net.runelite.client.ui.PluginPanel;
 
 /**
- * The Guardian side panel: the hitpoint crest, then three pages. Ward is the live read,
- * Journal is the story of the run, and Perils is the run in numbers.
+ * The Guardian side panel: the hitpoint crest, then four pages. Ward is the live read,
+ * Journal is the story of the run, Perils is the run in numbers, and Inquest takes each death and close call
+ * apart tick by tick, after the fact.
  */
 public class GuardianPanel extends PluginPanel
 {
-	private static final String[] TABS = {"ward", "journal", "perils"};
+	private static final String[] TABS = {"ward", "journal", "perils", "inquest"};
 	private static final String CONFIRM = "Click again to start over";
 
 	private final WardCrest crest = new WardCrest();
-	private final Segmented tabs = new Segmented(true, "Ward", "Journal", "Perils");
+	private final Segmented tabs = new Segmented(true, "Ward", "Journal", "Perils", "Inquest");
 	private final CardLayout cards = new CardLayout();
 	private final JPanel content = new JPanel(cards);
 	private final JScrollPane ward = scroller();
 	private final JScrollPane journalView = scroller();
 	private final JScrollPane perils = scroller();
+	private final JScrollPane inquestView = scroller();
 	private final PerilGauge gauge = new PerilGauge();
 	private final Runnable onNewRun;
 	private final Consumer<Boolean> onOneLife;
@@ -45,6 +48,11 @@ public class GuardianPanel extends PluginPanel
 	private Peril peril = Peril.calm();
 	private Journal journal;
 	private HitMemory hits;
+	private Inquests inquests;
+	/** The inquest open on the Inquest page, by its time, or -1 for the newest. */
+	private long openInquest = -1;
+	/** The newest inquest last handed over, so a new one is noticed and opened. */
+	private long newestInquest = -1;
 	private TripCheck trip;
 	private int foodReserve;
 	private boolean confirming;
@@ -91,6 +99,7 @@ public class GuardianPanel extends PluginPanel
 		content.add(ward, TABS[0]);
 		content.add(journalView, TABS[1]);
 		content.add(perils, TABS[2]);
+		content.add(inquestView, TABS[3]);
 		add(content, BorderLayout.CENTER);
 
 		tabs.onChange(tab ->
@@ -149,7 +158,7 @@ public class GuardianPanel extends PluginPanel
 		crest.update(situation, peril, journal);
 	}
 
-	/** Shows a tab as a click on it would: 0 Ward, 1 Journal, 2 Perils. */
+	/** Shows a tab as a click on it would: 0 Ward, 1 Journal, 2 Perils, 3 Inquest. */
 	void selectTab(int tab)
 	{
 		tabs.setSelected(tab, true);
@@ -200,6 +209,34 @@ public class GuardianPanel extends PluginPanel
 		this.hits = hits;
 		crest.update(situation, peril, journal);
 		journalChanged();
+	}
+
+	/**
+	 * Called on the Swing thread with a private copy of this account's inquests whenever one is added, or null when
+	 * logged out. A new inquest opens on its page in place of whichever one was open.
+	 */
+	public void updateInquests(Inquests inquests)
+	{
+		this.inquests = inquests;
+		long latest = newest(inquests);
+		if (latest != newestInquest)
+		{
+			newestInquest = latest;
+			openInquest = -1;
+		}
+		rebuildInquest();
+	}
+
+	private static long newest(Inquests list)
+	{
+		return list == null || list.isEmpty() ? -1 : list.getList().get(list.getList().size() - 1).getAt();
+	}
+
+	/** Opens one kept inquest by its time. Swing thread only. */
+	void openInquest(long at)
+	{
+		openInquest = at;
+		rebuildInquest();
 	}
 
 	/** Where a click on "Mark as fallen" goes, with the time of the death it was on. */
@@ -264,6 +301,13 @@ public class GuardianPanel extends PluginPanel
 		replace(journalView, JournalView.build(journal, situation, System.currentTimeMillis(), newRunButton(), oneLifeButton(), worth,
 			this::fallenButton, shareButtons(), shareNote));
 		replace(perils, PerilsView.build(journal, hits));
+		rebuildInquest();
+	}
+
+	private void rebuildInquest()
+	{
+		replace(inquestView, InquestView.build(inquests, situation.isLoggedIn(), openInquest, System.currentTimeMillis(),
+			this::openInquest));
 	}
 
 	/** Lets the journal save and copy the seal card; names go on it while the option is on. */

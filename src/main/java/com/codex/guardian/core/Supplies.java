@@ -164,6 +164,21 @@ public final class Supplies
 	}
 
 	/**
+	 * True for an item Guardian counts as a way out (charged teleport jewellery, a tablet or scroll that leaves the
+	 * Wilderness), by the same rules as the readiness check; an inquest uses it to notice a teleport attempt.
+	 */
+	public static boolean isWayOut(String name)
+	{
+		if (name == null || name.isEmpty())
+		{
+			return false;
+		}
+		Readiness.Builder b = new Readiness.Builder();
+		readEscape(b, new Item(name, 1));
+		return b.build().hasEscape();
+	}
+
+	/**
 	 * Every potion dose carried, whatever the potion: what a replay counts as drinking. Jewellery shows its
 	 * charges the same way ("Amulet of glory(4)") and is left out, so a teleport is never counted as a drink.
 	 */

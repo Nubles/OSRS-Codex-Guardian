@@ -18,6 +18,18 @@ Part of the **Codex** suite of RuneLite plugins, which share one look: warm ink,
 - **The run's seal.** The Journal opens on a seal earned by hours played on one life: bronze, iron at 5 h, steel 15, black 30, mithril 60, adamant 120, rune 250, dragon 500. It shows the day the run began, close calls survived, the closest of them, and your worth (with Codex Ledger). A fallen run keeps its seal, cracked.
 - **Seal card.** **Save seal card** or **Copy** under the seal makes a picture of it to share.
 - **Perils.** Close calls, your lowest hitpoints, the biggest hit taken, time spent in danger, what has dealt you the most damage and where it got close, and the monsters that have hit you hardest.
+- **Inquest.** Every death and close call taken apart afterwards, tick by tick. Guardian keeps the last half minute in full (hitpoints, prayer points and which protection prayer was on, each hit with who dealt it and whether the game showed it as a max hit, food and potions, teleport attempts, the Wilderness level, poison, venom, a freeze or a teleblock) and freezes it into an inquest when a close call ends or a death comes. The page shows:
+  - a strip chart of hitpoints and prayer with every hit, lanes for protection prayers, food and teleports, and the worst tick of damage drawn as a line;
+  - a plain verdict: "You took 47 in 3 ticks from 3 Ice troll runts with no protection prayer on; your last food was 9 ticks before.";
+  - the tick it went past saving (for a death: hitpoints at or under the worst tick of damage, and no food eaten after it) or, for a close call, the brink;
+  - what would have saved you, from your own readiness: food still in the pack, a teleport that worked where you stood (by the same Wilderness rules as the Ward), or one that did not reach, the protection prayers your Prayer level opens, and a last resort.
+
+  It is read afterwards only: nothing on it runs during a fight, and it never says what to pray or where to stand. The last 20 inquests are kept per account.
+
+<p align="center">
+  <img src="docs/screenshots/10-inquest.png" width="225" alt="Inquest: a close call taken apart tick by tick">
+  <img src="docs/screenshots/11-inquest-death.png" width="225" alt="Inquest: what would have saved you">
+</p>
 
 <p align="center">
   <img src="docs/screenshots/2-ward-hardcore-world.png" width="225" alt="The Ward on a Hardcore World in the Fight Caves">
@@ -71,7 +83,7 @@ Guardian works on its own. With these installed it knows more, and only ever rea
 
 ## Privacy and rules
 
-Guardian only reads what the client already shows you: your stats, inventory and worn items, your position and who is attacking you. It warns about situations in general and never about what a particular boss is about to do. It does not click, change menus, send chat or touch the network. The journal and hit memory are saved per account in your RuneLite profile and never leave your computer. If a saved journal, hit memory or one-life choice is ever damaged, or holds something only a newer Guardian understands, Guardian keeps every part it can read and keeps the saved text aside (as `journalUnreadable`, `hitMemoryUnreadable` or `oneLifeAccountUnreadable`) rather than writing over it.
+Guardian only reads what the client already shows you: your stats, the protection prayers you have on, inventory and worn items, your position, who is attacking you, the game's "You have been frozen!" line and which items you click to teleport (the click itself goes through untouched). It warns about situations in general and never about what a particular boss is about to do. It does not click, change menus, send chat or touch the network. The journal, hit memory and inquests are saved per account in your RuneLite profile and never leave your computer. If a saved journal, hit memory or one-life choice is ever damaged, or holds something only a newer Guardian understands, Guardian keeps every part it can read and keeps the saved text aside (as `journalUnreadable`, `hitMemoryUnreadable`, `inquestsV1Unreadable` or `oneLifeAccountUnreadable`) rather than writing over it.
 
 ## Development
 
