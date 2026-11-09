@@ -1791,12 +1791,17 @@ public class CodexGuardianPlugin extends Plugin
 		SwingUtilities.invokeLater(() -> target.updateInquests(copy));
 	}
 
+	private boolean praying(Prayer prayer)
+	{
+		return client.getVarbitValue(prayer.getVarbit()) == 1;
+	}
+
 	/** The protection prayers on now, as an inquest's mask. */
 	private int protections()
 	{
-		return (client.isPrayerActive(Prayer.PROTECT_FROM_MELEE) ? Inquest.MELEE : 0)
-			| (client.isPrayerActive(Prayer.PROTECT_FROM_MISSILES) ? Inquest.MISSILES : 0)
-			| (client.isPrayerActive(Prayer.PROTECT_FROM_MAGIC) ? Inquest.MAGIC : 0);
+		return (praying(Prayer.PROTECT_FROM_MELEE) ? Inquest.MELEE : 0)
+			| (praying(Prayer.PROTECT_FROM_MISSILES) ? Inquest.MISSILES : 0)
+			| (praying(Prayer.PROTECT_FROM_MAGIC) ? Inquest.MAGIC : 0);
 	}
 
 	private static boolean overTime(int type)
