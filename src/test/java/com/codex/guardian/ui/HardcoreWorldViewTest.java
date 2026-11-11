@@ -68,4 +68,26 @@ public class HardcoreWorldViewTest
 		assertTrue(said, said.contains("DEATH RULES HERE") && said.contains("Clan Wars") && said.contains("Fortis Colosseum"));
 		Pictures.keep(Pictures.shot(p, 900), "hcw-journal-rules.png");
 	}
+
+	@Test
+	public void aFallenRunGetsTheResetOrTransferCard()
+	{
+		com.codex.guardian.core.KeptOnDeath kept = com.codex.guardian.core.KeptOnDeath.of(Arrays.asList(
+			new com.codex.guardian.core.KeptOnDeath.Carried("Abyssal whip", 1, 1_400_000),
+			new com.codex.guardian.core.KeptOnDeath.Carried("Amulet of glory", 1, 12_000),
+			new com.codex.guardian.core.KeptOnDeath.Carried("Dragon boots", 1, 180_000)), false, false);
+		com.codex.guardian.core.DeathChoice choice = com.codex.guardian.core.DeathChoice.of(NOW, 1212, 87, 6000L * 41, 4, kept,
+			3_240_000, 412, "At Vorkath, to Vorkath", NOW - 1000);
+		GuardianPanel p = panel(hcw(9023), 0);
+		p.updateChoice(choice, null);
+		assertTrue("not shown before the run is known to have fallen", !Pictures.text(p.wardView()).contains("RESET OR TRANSFER"));
+		choice.confirm();
+		p.updateChoice(choice, "Your best life: Life 2, 55 h, total 1,348, rune seal");
+		String said = Pictures.text(p.wardView());
+		assertTrue(said, said.contains("RESET OR TRANSFER") && said.contains("3 protected items, 1.6M")
+			&& said.contains("3 days without Stronghold GP") && said.contains("See the inquest"));
+		Pictures.keep(Pictures.shot(p, 760), "hcw-reset-or-transfer.png");
+		Pictures.click(Pictures.button(p.wardView(), "Hide"));
+		assertTrue(!Pictures.text(p.wardView()).contains("RESET OR TRANSFER"));
+	}
 }

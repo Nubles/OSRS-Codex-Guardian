@@ -105,9 +105,12 @@ On a Hardcore World, Guardian follows the mode's own death list from the wiki:
 
 Walk into a listed place and the plaque says so at the door ("Safe death here, even on a Hardcore World" or "This death ends your run"), the Ward's place card carries a **Safe death** or **Ends your run** pill, and on your boat it reads **Capsize only**. The Journal lists the whole ruleset under the account's mode.
 
+**Reset or Transfer.** When a Hardcore World run falls, the Ward opens on a calm card before you choose in the game's own window. Two columns, side by side and in the same colours, because the card recommends nothing: **Reset** wipes your total level, quest points, bank (valued at Grand Exchange prices, from the bank as you last saw it or Codex Bank Steward's copy) and the protected items too, lets you start again as often as you like, and means 3 days without Stronghold of Security GP; **Transfer** keeps your protected items (named and valued, the three most valuable you carried, four with Protect Item) and your bank and storage, and leaves Hardcore Worlds for good. Under them: items bound for a gravestone are deleted either way, this life's hours, total level, seal and close calls, and how it ended. **See the inquest** opens the death's tick-by-tick inquest. The card stays until Guardian sees which way you chose (back on an ordinary world means Transfer; a lower total level on a Hardcore World means Reset), and **Hide** puts it away until the next login.
+
 <p align="center">
   <img src="docs/screenshots/16-hcw-ward.png" width="225" alt="The Ward on a Hardcore World in Nightmare Zone: a death here ends your run">
   <img src="docs/screenshots/17-hcw-rules.png" width="225" alt="The Hardcore Worlds death list in the Journal">
+  <img src="docs/screenshots/18-reset-or-transfer.png" width="225" alt="The Reset or Transfer card">
 </p>
 
 Where the place alone cannot tell (an unlisted minigame, a diary's resurrection, a boat), a death is journaled as an **Unconfirmed death**. When the game then asks you to Reset or Transfer, which it only does after a death that ended the run, Guardian records the fall by itself; if the run ended on another client, **Mark as fallen** under the entry does it.

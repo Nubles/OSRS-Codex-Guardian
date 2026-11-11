@@ -1,6 +1,8 @@
 package com.codex.guardian;
 
 import com.codex.guardian.core.Advice;
+import com.codex.guardian.core.DeathChoice;
+import com.codex.guardian.core.KeptOnDeath;
 import com.codex.guardian.core.CloseCallWatch;
 import com.codex.guardian.core.DamageLog;
 import com.codex.guardian.core.HardcoreRules;
@@ -101,6 +103,7 @@ import net.runelite.api.gameval.VarbitID;
 import net.runelite.client.Notifier;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
+import net.runelite.client.game.ItemManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ClientShutdown;
 import net.runelite.client.events.ConfigChanged;
@@ -144,6 +147,12 @@ public class CodexGuardianPlugin extends Plugin
 	static final String ONE_LIFE_KEY = "oneLifeAccount";
 	/** Added to a key's name to keep aside a saved value that could not be read in full. */
 	static final String UNREADABLE = "Unreadable";
+	/** A Hardcore World death's open Reset or Transfer choice, per account. */
+	static final String CHOICE_KEY = "deathChoiceV1";
+	/** About half a minute between looks at which way a Hardcore World choice went. */
+	private static final int CHOICE_CHECK_TICKS = 50;
+	/** A death older than this is not the one a newly opened choice is about. */
+	private static final long CHOICE_STALE_MS = 30 * 60 * 1000L;
 	/** Codex Quartermaster's saved data, read only, for the kit you packed and what your bank holds. */
 	static final String QUARTERMASTER_GROUP = "codexquartermaster";
 	static final String QUARTERMASTER_KEY = "quarters";
@@ -197,6 +206,9 @@ public class CodexGuardianPlugin extends Plugin
 
 	@Inject
 	private PerilVignette vignette;
+
+	@Inject
+	private ItemManager itemManager;
 
 	private final WatchBanner banner = new WatchBanner();
 	/** This account's watch rules, or null until a profile is loaded. Client thread only. */
@@ -289,6 +301,11 @@ public class CodexGuardianPlugin extends Plugin
 	private int lastCombatLevel = -1;
 	/** False until the first tick after login, so the stats the game sends on login are not read as level ups. */
 	private boolean settled;
+	/** A Hardcore World death's Reset or Transfer, open until Guardian sees which way it went; null without one. */
+	private DeathChoice deathChoice;
+	private int choiceCheckTicks;
+	/** The last check read a total level lower than at the fall; a second one in a row is a Reset. */
+	private boolean resetSeen;
 
 	@Provides
 	CodexGuardianConfig provideConfig(ConfigManager configManager)
@@ -423,6 +440,9 @@ public class CodexGuardianPlugin extends Plugin
 		watchRules = null;
 		ruleWatch.reset();
 		publishWatch();
+		deathChoice = null;
+		resetSeen = false;
+		publishChoice();
 	}
 
 	@Subscribe
@@ -516,6 +536,7 @@ public class CodexGuardianPlugin extends Plugin
 		}
 		if (!CodexGuardianConfig.GROUP.equals(event.getGroup()) || JOURNAL_KEY.equals(event.getKey())
 			|| ONE_LIFE_KEY.equals(event.getKey()) || HITS_KEY.equals(event.getKey()) || INQUESTS_KEY.equals(event.getKey())
+			|| CHOICE_KEY.equals(event.getKey())
 			|| event.getKey() != null && event.getKey().startsWith(WATCH_KEY))
 		{
 			return;
@@ -580,12 +601,152 @@ public class CodexGuardianPlugin extends Plugin
 	 */
 	private void deathChoiceShown()
 	{
-		if (journal != null && journal.confirmFallen(System.currentTimeMillis()))
+		long now = System.currentTimeMillis();
+		if (journal != null && journal.confirmFallen(now))
 		{
 			journalChanged = true;
 			saveJournal();
 			publishJournal();
 		}
+		if (deathChoice == null || now - deathChoice.getAt() > CHOICE_STALE_MS)
+		{
+			// The death came while Guardian was not watching: what is carried now is the best read there is.
+			deathChoice = withCause(choiceNow(now, -1, null));
+		}
+		if (!deathChoice.isConfirmed())
+		{
+			deathChoice.confirm();
+		}
+		saveChoice();
+	}
+
+	/** The choice with the death's story in one line, from the journal's newest death entry. */
+	private DeathChoice withCause(DeathChoice c)
+	{
+		if (c.getCause() != null || journal == null)
+		{
+			return c;
+		}
+		List<Journal.Entry> entries = journal.getEntries();
+		for (int i = entries.size() - 1; i >= 0; i--)
+		{
+			Journal.Entry e = entries.get(i);
+			Journal.Type t = e.getType();
+			if (t == Journal.Type.DEATH || t == Journal.Type.UNCONFIRMED_DEATH || t == Journal.Type.SAFE_DEATH)
+			{
+				DeathChoice copy = DeathChoice.of(c.getAt(), c.getTotalLevel(), c.getQuestPoints(), c.getPlayedTicks(),
+					c.getCloseCalls(), null, c.getBankValue(), c.getBankKinds(), e.getDetail(), c.getInquestAt());
+				copy.keepFrom(c);
+				return copy;
+			}
+		}
+		return c;
+	}
+
+	/** The life as it stands now, for the Reset or Transfer card. Client thread. */
+	private DeathChoice choiceNow(long now, long inquestAt, String cause)
+	{
+		List<KeptOnDeath.Carried> carried = new ArrayList<>();
+		for (int id : new int[]{InventoryID.INV, InventoryID.WORN})
+		{
+			ItemContainer container = client.getItemContainer(id);
+			if (container == null)
+			{
+				continue;
+			}
+			for (Item item : container.getItems())
+			{
+				if (item != null && item.getId() >= 0 && item.getQuantity() > 0)
+				{
+					carried.add(new KeptOnDeath.Carried(itemName(item.getId()), item.getQuantity(), price(item.getId())));
+				}
+			}
+		}
+		Player local = client.getLocalPlayer();
+		boolean skulled = local != null && pkSkull(local.getSkullIcon());
+		KeptOnDeath kept = KeptOnDeath.of(carried, skulled, praying(Prayer.PROTECT_ITEM));
+		long bankValue = -1;
+		Map<Integer, Long> bank = bankItems;
+		if (bank != null)
+		{
+			bankValue = 0;
+			for (Map.Entry<Integer, Long> e : bank.entrySet())
+			{
+				bankValue = Math.min(Long.MAX_VALUE / 2, bankValue + price(e.getKey()) * Math.max(0, e.getValue()));
+			}
+		}
+		return DeathChoice.of(now, client.getTotalLevel(), client.getVarpValue(VarPlayerID.QP),
+			journal == null ? 0 : journal.getPlayedTicks(), journal == null ? 0 : journal.getCloseCalls(), kept, bankValue,
+			bank == null ? -1 : bank.size(), cause, inquestAt);
+	}
+
+	/** An item's Grand Exchange price each, as RuneLite gives it; 0 for anything without one. Client thread. */
+	private long price(int id)
+	{
+		if (id < 0 || id >= client.getItemCount())
+		{
+			return 0;
+		}
+		return Math.max(0, itemManager.getItemPrice(itemManager.canonicalize(id)));
+	}
+
+	/**
+	 * Watches for the way a Hardcore World choice went: the same account back on an ordinary world has transferred;
+	 * one still on a Hardcore World with a lower total level than at the fall has reset (real levels never go down).
+	 * Checked every half minute while a choice is open, and a Reset only once it has read so twice running.
+	 */
+	private void watchChoice()
+	{
+		DeathChoice c = deathChoice;
+		if (c == null || !c.isConfirmed() || !settled || ++choiceCheckTicks < CHOICE_CHECK_TICKS)
+		{
+			return;
+		}
+		choiceCheckTicks = 0;
+		if (!OneLife.hardcoreWorld(client.getWorldType()))
+		{
+			resolveChoice(false);
+			return;
+		}
+		boolean reset = c.looksReset(client.getTotalLevel());
+		if (reset && resetSeen)
+		{
+			resolveChoice(true);
+		}
+		resetSeen = reset;
+	}
+
+	/** The player chose. The card goes. */
+	private void resolveChoice(boolean reset)
+	{
+		deathChoice = null;
+		resetSeen = false;
+		if (journalProfile != null)
+		{
+			configManager.unsetConfiguration(CodexGuardianConfig.GROUP, journalProfile, CHOICE_KEY);
+		}
+		publishChoice();
+	}
+
+	private void saveChoice()
+	{
+		if (journalProfile != null && deathChoice != null)
+		{
+			configManager.setConfiguration(CodexGuardianConfig.GROUP, journalProfile, CHOICE_KEY, gson.toJson(deathChoice));
+		}
+		publishChoice();
+	}
+
+	/** Hands the panel a private copy of the open choice, or null. */
+	private void publishChoice()
+	{
+		GuardianPanel target = panel;
+		if (target == null)
+		{
+			return;
+		}
+		DeathChoice copy = deathChoice == null ? null : DeathChoice.load(gson, gson.toJson(deathChoice));
+		SwingUtilities.invokeLater(() -> target.updateChoice(copy, null));
 	}
 
 	@Subscribe
@@ -696,7 +857,15 @@ public class CodexGuardianPlugin extends Plugin
 		// The killing blow is still waiting for the next tick; record it now so the replay ends at zero.
 		recorder.tick(0, situation.getMaxHitpoints(), readiness.getFoodCount(), Supplies.potionDoses(lastInventory));
 		inquestRecorder.deathTick();
-		keepInquest(inquestRecorder.death(place(situation), Inquest.Kit.of(readiness), System.currentTimeMillis()));
+		long now = System.currentTimeMillis();
+		Inquest inquest = inquestRecorder.death(place(situation), Inquest.Kit.of(readiness), now);
+		keepInquest(inquest);
+		boolean hardcoreWorld = OneLife.hardcoreWorld(client.getWorldType());
+		if (hardcoreWorld)
+		{
+			// What Reset would wipe and Transfer would keep, read now while the pack is still the one you died with.
+			deathChoice = choiceNow(now, inquest == null ? -1 : inquest.getAt(), null);
+		}
 		if (situation.isOneLife() && Zones.isUnconfirmedSafe(situation.getZone()))
 		{
 			// On a Hardcore World, somewhere the place alone cannot say whether the run fell (an unlisted minigame, a
@@ -708,6 +877,16 @@ public class CodexGuardianPlugin extends Plugin
 		{
 			journal.death(place(situation), lastHitSource, situation.isOneLife(), situation.risk() == Risk.SAFE,
 				recorder.death(), System.currentTimeMillis());
+			if (deathChoice != null && situation.risk() != Risk.SAFE)
+			{
+				// An unsafe death on a Hardcore World: the choice is coming.
+				deathChoice.confirm();
+			}
+		}
+		if (deathChoice != null)
+		{
+			deathChoice = withCause(deathChoice);
+			saveChoice();
 		}
 		journalChanged = true;
 		closeCalls.reset();
@@ -764,6 +943,7 @@ public class CodexGuardianPlugin extends Plugin
 			watchCombatLevel(s, now);
 		}
 		watchWilderness(s);
+		watchChoice();
 		watchLag(s, now);
 		watchRules(local, s);
 		alert(s, p);
@@ -1629,6 +1809,10 @@ public class CodexGuardianPlugin extends Plugin
 		{
 			configManager.setConfiguration(CodexGuardianConfig.GROUP, profile, ONE_LIFE_KEY, String.valueOf(accountOneLife));
 		}
+		deathChoice = DeathChoice.load(gson, configManager.getConfiguration(CodexGuardianConfig.GROUP, profile, CHOICE_KEY));
+		choiceCheckTicks = 0;
+		resetSeen = false;
+		publishChoice();
 		readKit();
 		readWorth();
 		journalChanged = true;
