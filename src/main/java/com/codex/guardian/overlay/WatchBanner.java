@@ -8,6 +8,7 @@ import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.GradientPaint;
 import java.awt.Graphics2D;
+import java.awt.Shape;
 import java.awt.geom.Ellipse2D;
 import java.awt.geom.Path2D;
 import java.awt.geom.RoundRectangle2D;
@@ -101,10 +102,11 @@ public class WatchBanner extends Overlay
 		c.setStroke(new BasicStroke(1f));
 		c.setColor(Theme.mix(Theme.GOLD, s.color, 0.45));
 		c.draw(shape);
-		c.setClip(shape);
+		Shape before = c.getClip();
+		c.clip(shape);
 		c.setPaint(new GradientPaint(0, 0, s.color, 0, h, Theme.alpha(s.color, 90)));
 		c.fillRect(0, 0, 3, h);
-		c.setClip(null);
+		c.setClip(before);
 
 		eye(c, 9, h / 2 - 6, s.color);
 

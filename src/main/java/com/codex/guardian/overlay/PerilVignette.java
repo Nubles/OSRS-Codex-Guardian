@@ -90,8 +90,25 @@ public class PerilVignette extends Overlay
 		ruleFlashUntil = now + RULE_FLASH_MILLIS;
 	}
 
+	/**
+	 * Draws on a copy of the renderer's graphics and disposes it, so no clip, stroke, paint, composite, font or hint
+	 * set while drawing ever reaches RuneLite's overlay renderer or the overlays after this one.
+	 */
 	@Override
-	public Dimension render(Graphics2D g)
+	public Dimension render(Graphics2D graphics)
+	{
+		Graphics2D g = (Graphics2D) graphics.create();
+		try
+		{
+			return draw(g);
+		}
+		finally
+		{
+			g.dispose();
+		}
+	}
+
+	private Dimension draw(Graphics2D g)
 	{
 		Flash f = flash;
 		if (f == null && ruleFlash != null)

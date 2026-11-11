@@ -38,7 +38,7 @@ Part of the **Codex** suite of RuneLite plugins, which share one look: warm ink,
 
 - **Watch.** Your own alarms, kept for this account (up to 12). Each rule has a trigger, what to do, and a rest before it may fire again:
   - **Triggers:** a game message that contains some words, or matches a pattern (a Java regex); a skill falling below a level (Hitpoints, Prayer or any other); run energy falling below a percentage; food falling below a number of pieces (food as Guardian reads your pack); an item's count falling below a number (a potion counts in every dose); a full backpack; standing idle for some seconds.
-  - **Actions:** a RuneLite notification (with its own sound setting), a flash at the edge of the game view in gold, teal, ember or blood with a small banner naming the rule, and a line in your chat.
+  - **Actions:** a RuneLite notification (with its own sound setting), and a flash at the edge of the game view in gold, teal, ember or blood with a small banner naming the rule. Guardian never writes in the game's chatbox; a rule saved by an older version that asked for a chat line now notifies instead.
   - A rule fires as its moment comes, not for as long as it lasts: prayer must have been above the number and fall below it. It then rests; if the moment comes again while it rests, it fires when the rest ends, provided it still holds. Only game messages are read, never anyone's chat.
   - Ready-made rules for what Guardian already watches: prayer running low, food running low, Tele Blocked, frozen, ring of life used, backpack full. Add one with a click and change it as you like.
   - **Try it** fires a rule once so you can see and hear it before you rely on it. A pattern that does not read is told in the editor and never saved; one that takes too long on a message is stopped after a fixed amount of work and paused, so a rule can never freeze the game.
@@ -95,7 +95,25 @@ Part of the **Codex** suite of RuneLite plugins, which share one look: warm ink,
 
 ## Hardcore Worlds and one-life accounts
 
-Hardcore Ironmen and any account on a Hardcore World are recognised by themselves. Until their rules can be checked, Guardian does not take any minigame as safe on a Hardcore World: Fight Caves, the Inferno, the Colosseum, the Gauntlet, Pest Control and the rest read as a risk there. A death in one is journaled as an "Unconfirmed death"; if the game did end your run, **Mark as fallen** under that entry records it. For any other one-life account, press **Mark one-life** in the Journal tab. The choice belongs to that account alone.
+Hardcore Ironmen and any account on a Hardcore World are recognised by themselves. For any other one-life account, press **Mark one-life** in the Journal tab. The choice belongs to that account alone.
+
+On a Hardcore World, Guardian follows the mode's own death list from the wiki:
+
+- **Safe, the run goes on:** capsizing your boat (no other death on it), Castle Wars, Clan Wars, Emir's Arena, Koschei's 4th phase in The Fremennik Trials, Last Man Standing, Pete Kayer's Challenges, the Galvek and Glough replays, Soul Wars, the TzHaar Fight Pit, and at Zulrah only the Elite Western Provinces resurrection.
+- **Unsafe, the run ends:** Barbarian Assault, the Camelot training room, Chambers of Xeric, the Dream World in Lunar Diplomacy, Fishing Trawler, the Inferno, Magic Training Arena, Nightmare Zone, Pest Control, your player-owned house, the PvM Arena, the TzHaar Fight Cave (its elite diary resurrection is safe), random events and the Rogues' Den maze.
+- **Not listed yet:** the Fortis Colosseum, the Gauntlet and Trouble Brewing are treated as unsafe.
+
+Walk into a listed place and the plaque says so at the door ("Safe death here, even on a Hardcore World" or "This death ends your run"), the Ward's place card carries a **Safe death** or **Ends your run** pill, and on your boat it reads **Capsize only**. The Journal lists the whole ruleset under the account's mode.
+
+**Reset or Transfer.** When a Hardcore World run falls, the Ward opens on a calm card before you choose in the game's own window. Two columns, side by side and in the same colours, because the card recommends nothing: **Reset** wipes your total level, quest points, bank (valued at Grand Exchange prices, from the bank as you last saw it or Codex Bank Steward's copy) and the protected items too, lets you start again as often as you like, and means 3 days without Stronghold of Security GP; **Transfer** keeps your protected items (named and valued, the three most valuable you carried, four with Protect Item) and your bank and storage, and leaves Hardcore Worlds for good. Under them: items bound for a gravestone are deleted either way, this life's hours, total level, seal and close calls, and how it ended. **See the inquest** opens the death's tick-by-tick inquest. The card stays until Guardian sees which way you chose (back on an ordinary world means Transfer; a lower total level on a Hardcore World means Reset), and **Hide** puts it away until the next login.
+
+<p align="center">
+  <img src="docs/screenshots/16-hcw-ward.png" width="225" alt="The Ward on a Hardcore World in Nightmare Zone: a death here ends your run">
+  <img src="docs/screenshots/17-hcw-rules.png" width="225" alt="The Hardcore Worlds death list in the Journal">
+  <img src="docs/screenshots/18-reset-or-transfer.png" width="225" alt="The Reset or Transfer card">
+</p>
+
+Where the place alone cannot tell (an unlisted minigame, a diary's resurrection, a boat), a death is journaled as an **Unconfirmed death**. When the game then asks you to Reset or Transfer, which it only does after a death that ended the run, Guardian records the fall by itself; if the run ended on another client, **Mark as fallen** under the entry does it.
 
 ## With other Codex plugins
 
@@ -109,7 +127,7 @@ Guardian works on its own. With these installed it knows more, and only ever rea
 
 ## Privacy and rules
 
-Guardian only reads what the client already shows you: your stats, the protection prayers you have on, inventory and worn items, your position, who is attacking you, the combat level, skull, weapon and position of players near you in the Wilderness, the game's "You have been frozen!" line and which items you click to teleport (the click itself goes through untouched). It warns about situations in general and never about what a particular boss is about to do. It does not click, change menus, send chat or touch the network. The journal, hit memory and inquests are saved per account in your RuneLite profile and never leave your computer. If a saved journal, hit memory or one-life choice is ever damaged, or holds something only a newer Guardian understands, Guardian keeps every part it can read and keeps the saved text aside (as `journalUnreadable`, `hitMemoryUnreadable`, `inquestsV1Unreadable` or `oneLifeAccountUnreadable`) rather than writing over it.
+Guardian only reads what the client already shows you: your stats, the protection prayers you have on, inventory and worn items, your position, who is attacking you, the combat level, skull, weapon and position of players near you in the Wilderness, the game's "You have been frozen!" line and which items you click to teleport (the click itself goes through untouched). It warns about situations in general and never about what a particular boss is about to do. It does not click, change menus, send or write chat, or touch the network. The journal, hit memory and inquests are saved per account in your RuneLite profile and never leave your computer. If a saved journal, hit memory or one-life choice is ever damaged, or holds something only a newer Guardian understands, Guardian keeps every part it can read and keeps the saved text aside (as `journalUnreadable`, `hitMemoryUnreadable`, `inquestsV1Unreadable` or `oneLifeAccountUnreadable`) rather than writing over it.
 
 ## Development
 

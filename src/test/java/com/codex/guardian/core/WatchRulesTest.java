@@ -39,7 +39,7 @@ public class WatchRulesTest
 	{
 		WatchRules set = of(WatchRules.Preset.LOW_PRAYER.rule(),
 			WatchRule.of("Bones", WatchRule.Trigger.CHAT_REGEX, "You (bury|scatter) the \\w+", null, 1)
-				.actions(false, true, WatchRule.Tint.BLOOD, true).cooldown(45),
+				.actions(false, true, WatchRule.Tint.BLOOD, false).cooldown(45),
 			WatchRule.of("Sharks", WatchRule.Trigger.ITEM_BELOW, "Shark", null, 4));
 		set.find(2).setOn(false);
 		String json = GSON.toJson(set);
@@ -54,7 +54,19 @@ public class WatchRulesTest
 		assertEquals(WatchRule.Tint.BLOOD, bones.getTint());
 		assertEquals(45, bones.getCooldown());
 		assertFalse(bones.isOn());
-		assertTrue(bones.isChat() && bones.isFlash() && !bones.isNotify());
+		assertTrue(!bones.isChat() && bones.isFlash() && !bones.isNotify());
+	}
+
+	@Test
+	public void aRuleThatOnceWroteInTheChatboxNowNotifiesInstead()
+	{
+		// Codex never writes in the game's chatbox: an older save that asked for a chat line still tells the player.
+		String old = "{\"version\":1,\"rules\":[{\"id\":1,\"name\":\"Bones\",\"on\":true,\"trigger\":\"CHAT\","
+			+ "\"text\":\"bury\",\"value\":1,\"notify\":false,\"flash\":false,\"chat\":true,\"cooldown\":30}]}";
+		WatchRule rule = WatchRules.load(GSON, old).getValue().find(1);
+		assertFalse(rule.isChat());
+		assertTrue(rule.isNotify());
+		assertTrue(rule.isComplete());
 	}
 
 	@Test

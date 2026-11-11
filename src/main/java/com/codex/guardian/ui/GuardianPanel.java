@@ -70,6 +70,11 @@ public class GuardianPanel extends PluginPanel
 	private java.util.function.BooleanSupplier nameOnCards = () -> true;
 	private java.util.function.BooleanSupplier worthOnCards = () -> false;
 	private String shareNote;
+	/** A Hardcore World death's open Reset or Transfer choice, or null. */
+	private com.codex.guardian.core.DeathChoice choice;
+	private String choiceBest;
+	/** Put away with Hide until the next login or a new death. */
+	private boolean choiceHidden;
 
 	/**
 	 * @param onNewRun  called on the Swing thread once the player confirms a fresh run
@@ -329,8 +334,38 @@ public class GuardianPanel extends PluginPanel
 	private void rebuildWard()
 	{
 		wardStale = false;
-		replace(ward, WardView.build(situation, peril, gauge, foodReserve, trip,
-			PlaceMemory.lines(journal, hits, PlaceMemory.placeOf(situation))));
+		StackPanel page = WardView.build(situation, peril, gauge, foodReserve, trip,
+			PlaceMemory.lines(journal, hits, PlaceMemory.placeOf(situation)));
+		if (situation.isLoggedIn() && choice != null && choice.isConfirmed() && !choiceHidden)
+		{
+			// Nothing on the Ward matters more until the choice is made.
+			long at = choice.getInquestAt();
+			page.add(ChoiceView.build(choice, choiceBest, at < 0 ? null : () ->
+			{
+				selectTab(3);
+				openInquest(at);
+			}, () ->
+			{
+				choiceHidden = true;
+				rebuildWard();
+			}), 0);
+		}
+		replace(ward, page);
+	}
+
+	/**
+	 * Called on the Swing thread with a Hardcore World death's open Reset or Transfer choice (null once it is made), and
+	 * a line on the account's best life to set it against (null without one).
+	 */
+	public void updateChoice(com.codex.guardian.core.DeathChoice choice, String best)
+	{
+		if (choice == null || this.choice == null || choice.getAt() != this.choice.getAt())
+		{
+			choiceHidden = false;
+		}
+		this.choice = choice;
+		this.choiceBest = best;
+		rebuildWard();
 	}
 
 	private void rebuildJournal()

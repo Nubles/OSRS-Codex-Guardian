@@ -14,6 +14,12 @@ public class Pill extends JComponent
 	private final String text;
 	private final Color color;
 
+	/** What the pill says. */
+	public String getText()
+	{
+		return text;
+	}
+
 	public Pill(String text, Color color)
 	{
 		this.text = text;

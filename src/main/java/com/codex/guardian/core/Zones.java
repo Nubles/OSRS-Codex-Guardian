@@ -17,18 +17,17 @@ public final class Zones
 	private static final String SLAYER = "Aggressive monsters can stack up here. Watch your hitpoints and keep an escape ready.";
 	private static final String QUIET = "Monsters here can still hit hard if you are underlevelled. Keep some food on you.";
 	private static final String SAFE = "Deaths here are normally safe, but check your mode's rules before you rely on that.";
-	/**
-	 * Whether a minigame death on a Hardcore World still costs nothing can't be checked yet. Until it can, Guardian's
-	 * advice fails toward danger: a wrong "safe" costs a run, a wrong "deadly" costs nothing. (The journal does not
-	 * call such a death the end of the run; see {@link Journal#unconfirmedDeath}.)
-	 */
-	static final String UNCONFIRMED = "Normally a safe death, but Guardian can't confirm minigame deaths are safe on "
-		+ "Hardcore Worlds yet, so it treats a death here as the end of the run.";
 	private static final String SKILLING = "A skilling boss. Its damage adds up while you work, so keep food and leave early.";
 
 	private static final Map<Integer, Zone> BY_REGION = new HashMap<>();
-	/** Each safe minigame as it reads on a Hardcore World, by name. */
-	private static final Map<String, Zone> ON_HARDCORE_WORLD = new HashMap<>();
+	/** Each safe minigame's risk where its death is not safe, by name: the read on a Hardcore World when unsafe. */
+	private static final Map<String, Risk> UNSAFE_RISK = new HashMap<>();
+	/**
+	 * Places named only on a Hardcore World, where the wiki's death list makes them matter: map squares from the same
+	 * RuneLite Discord plugin (DiscordGameEventType MG_CLAN_WARS, MG_MAGE_TRAINING_ARENA, MG_FISHING_TRAWLER,
+	 * MG_ROGUES_DEN, REGION_POH).
+	 */
+	private static final Map<Integer, Zone> HARDCORE_ONLY = new HashMap<>();
 	private static final Pattern LEVEL_TEXT = Pattern.compile("Level:\\s*(\\d{1,2})");
 
 	static
@@ -110,7 +109,7 @@ public final class Zones
 		dungeon("Slayer Tower", Risk.MEDIUM, SLAYER, 13623, 13723);
 
 		// Minigames where a death is normally safe
-		// (the second risk is the read on a Hardcore World, where the safe rule can't be confirmed yet)
+		// (the second risk is the read where it is not, as on a Hardcore World's unsafe list)
 		safe("Fight Caves", Risk.HIGH, 9551);
 		safe("The Inferno", Risk.EXTREME, 9043);
 		safe("Fortis Colosseum", Risk.EXTREME, 7216);
@@ -125,6 +124,13 @@ public final class Zones
 		safe("Emir's Arena", Risk.MEDIUM, 13362, 13363);
 		safe("Trouble Brewing", Risk.MEDIUM, 15150);
 		safe("Last Man Standing", Risk.MEDIUM, 13658, 13659, 13660, 13914, 13915, 13916, 13918, 13919, 13920, 14174, 14175, 14176, 14430, 14431, 14432);
+
+		hardcoreOnly("Clan Wars", Zone.Kind.SAFE_MINIGAME, Risk.SAFE, 12621, 12622, 12623, 13130, 13131, 13133, 13134, 13135,
+			13386, 13387, 13390, 13641, 13642, 13643, 13644, 13645, 13646, 13647, 13899, 13900, 14155, 14156);
+		hardcoreOnly("Magic Training Arena", Zone.Kind.SAFE_MINIGAME, Risk.LOW, 13462, 13463);
+		hardcoreOnly("Fishing Trawler", Zone.Kind.SAFE_MINIGAME, Risk.LOW, 7499);
+		hardcoreOnly("Rogues' Den", Zone.Kind.SAFE_MINIGAME, Risk.MEDIUM, 11854, 11855, 12109, 12110, 12111);
+		hardcoreOnly("Player-owned house", Zone.Kind.ACTIVITY, Risk.LOW, 7534, 7535, 7790, 7791, 8046, 8047, 8302, 8303);
 	}
 
 	private Zones()
@@ -137,24 +143,59 @@ public final class Zones
 		return BY_REGION.get(regionId);
 	}
 
-	/**
-	 * The zone as it reads on a Hardcore World. A minigame where a death is normally safe is not taken as safe there
-	 * until the rule can be checked (see {@link #UNCONFIRMED}); every other zone is unchanged.
-	 */
-	public static Zone onHardcoreWorld(Zone zone)
+	/** The named zone for a map region on a Hardcore World, where a few more places matter (see {@link #HARDCORE_ONLY}). */
+	public static Zone forRegion(int regionId, boolean hardcoreWorld)
 	{
-		if (zone == null || zone.getKind() != Zone.Kind.SAFE_MINIGAME || zone.getRisk() != Risk.SAFE)
+		Zone zone = BY_REGION.get(regionId);
+		if (!hardcoreWorld)
 		{
 			return zone;
 		}
-		Zone unconfirmed = ON_HARDCORE_WORLD.get(zone.getName());
-		return unconfirmed != null ? unconfirmed : new Zone(zone.getName(), Zone.Kind.SAFE_MINIGAME, Risk.MEDIUM, UNCONFIRMED);
+		return onHardcoreWorld(zone != null ? zone : HARDCORE_ONLY.get(regionId));
 	}
 
-	/** True for a minigame whose safe-death rule Guardian is not relying on, as on a Hardcore World. */
+	/**
+	 * The zone as it reads on a Hardcore World, by the wiki's death list ({@link HardcoreRules}): a minigame on the safe
+	 * list stays safe, one on the unsafe list is as risky as its fight, and one the list does not name yet is not
+	 * taken as safe. A place with a diary resurrection (the Fight Caves, Zulrah) keeps its risk and says so.
+	 */
+	public static Zone onHardcoreWorld(Zone zone)
+	{
+		if (zone == null)
+		{
+			return null;
+		}
+		Zone.DeathRule rule = HardcoreRules.forZone(zone.getName());
+		if (rule == null)
+		{
+			return zone;
+		}
+		Risk risk = zone.getRisk();
+		if (rule == Zone.DeathRule.SAFE)
+		{
+			risk = Risk.SAFE;
+		}
+		else if (risk == Risk.SAFE)
+		{
+			Risk unsafe = UNSAFE_RISK.get(zone.getName());
+			risk = unsafe != null ? unsafe : Risk.MEDIUM;
+		}
+		return new Zone(zone.getName(), zone.getKind(), risk, HardcoreRules.advice(rule), rule);
+	}
+
+	/** Your own boat on a Hardcore World, away from any named place: only capsizing is a safe death there. */
+	public static Zone atSea()
+	{
+		return new Zone("At sea", Zone.Kind.ACTIVITY, Risk.LOW, HardcoreRules.advice(Zone.DeathRule.BOAT), Zone.DeathRule.BOAT);
+	}
+
+	/**
+	 * True for a place where a death may or may not have ended a Hardcore World run, which Guardian cannot tell from
+	 * the place alone: unlisted minigames, a diary's resurrection, a boat. The journal keeps such a death open.
+	 */
 	public static boolean isUnconfirmedSafe(Zone zone)
 	{
-		return zone != null && zone.getKind() == Zone.Kind.SAFE_MINIGAME && zone.getRisk() != Risk.SAFE;
+		return zone != null && zone.getDeathRule() != null && zone.getDeathRule().undecided();
 	}
 
 	/**
@@ -284,10 +325,20 @@ public final class Zones
 		put(new Zone(name, Zone.Kind.DUNGEON, risk, advice), regions);
 	}
 
-	private static void safe(String name, Risk onHardcoreWorld, int... regions)
+	/** A minigame where a death is normally safe, and its risk where it is not (an unsafe one on a Hardcore World). */
+	private static void safe(String name, Risk whenUnsafe, int... regions)
 	{
 		put(new Zone(name, Zone.Kind.SAFE_MINIGAME, Risk.SAFE, SAFE), regions);
-		ON_HARDCORE_WORLD.put(name, new Zone(name, Zone.Kind.SAFE_MINIGAME, onHardcoreWorld, UNCONFIRMED));
+		UNSAFE_RISK.put(name, whenUnsafe);
+	}
+
+	private static void hardcoreOnly(String name, Zone.Kind kind, Risk risk, int... regions)
+	{
+		Zone zone = new Zone(name, kind, risk, "");
+		for (int region : regions)
+		{
+			HARDCORE_ONLY.putIfAbsent(region, zone);
+		}
 	}
 
 	private static void put(Zone zone, int... regions)

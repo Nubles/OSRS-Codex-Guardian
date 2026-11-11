@@ -111,7 +111,7 @@ public class WatchViewTest
 		WatchRules set = new WatchRules();
 		set.add(WatchRules.Preset.LOW_PRAYER.rule());
 		set.add(WatchRule.of("Clue drop", WatchRule.Trigger.CHAT_REGEX, "clue scroll|sneaking suspicion", null, 1)
-			.actions(true, true, WatchRule.Tint.GOLD, true).cooldown(10));
+			.actions(true, true, WatchRule.Tint.GOLD, false).cooldown(10));
 		WatchRule sharks = WatchRule.of("Sharks", WatchRule.Trigger.ITEM_BELOW, "Shark", null, 4)
 			.actions(true, false, null, false).cooldown(120);
 		sharks.setOn(false);
@@ -227,7 +227,6 @@ public class WatchViewTest
 		draft.setName("Teleblock");
 		draft.setFlash(true);
 		draft.setTint(WatchRule.Tint.BLOOD);
-		draft.setChat(true);
 		panel.updateWatch(sample(), true, Collections.emptySet());
 		List<JTextField> fields = find(panel.watchPage(), JTextField.class, new ArrayList<>());
 		assertFalse(fields.isEmpty());

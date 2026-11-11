@@ -187,4 +187,45 @@ public class JournalTest
 		assertEquals(1, back.getUnconfirmedDeaths());
 		assertTrue(back.markFallen(5));
 	}
+
+	@Test
+	public void theGamesResetOrTransferChoiceRecordsTheFall()
+	{
+		long min = 60_000L;
+		// An open death (a diary's resurrection, an unlisted minigame) becomes the fall, however long ago it was.
+		Journal open = Journal.fresh(0);
+		open.unconfirmedDeath("Fight Caves", "TzTok-Jad", null, 10 * min);
+		assertTrue(open.confirmFallen(100 * min));
+		assertEquals(1, open.getDeaths());
+		assertEquals(0, open.getUnconfirmedDeaths());
+		assertEquals("The run has fallen", last(open).getTitle());
+		assertFalse("asked again at the next login: nothing more", open.confirmFallen(101 * min));
+		assertEquals(1, open.getDeaths());
+
+		// A death Guardian took as safe a moment ago is overruled by the game.
+		Journal safe = Journal.fresh(0);
+		safe.death("Castle Wars", null, true, true, 10 * min);
+		assertTrue(safe.confirmFallen(11 * min));
+		assertEquals(0, safe.getSafeDeaths());
+		assertEquals(Journal.Type.DEATH, last(safe).getType());
+
+		// A safe death long ago is left alone; the fall Guardian missed is written now.
+		Journal missed = Journal.fresh(0);
+		missed.death("Castle Wars", null, true, true, min);
+		assertTrue(missed.confirmFallen(90 * min));
+		assertEquals(1, missed.getSafeDeaths());
+		assertEquals(1, missed.getDeaths());
+		assertEquals(Journal.CHOICE_DETAIL, last(missed).getDetail());
+
+		// Already fallen: nothing changes.
+		Journal fallen = Journal.fresh(0);
+		fallen.death("Vorkath", "Vorkath", true, false, min);
+		assertFalse(fallen.confirmFallen(2 * min));
+		assertEquals(1, fallen.getDeaths());
+	}
+
+	private static Journal.Entry last(Journal j)
+	{
+		return j.getEntries().get(j.getEntries().size() - 1);
+	}
 }

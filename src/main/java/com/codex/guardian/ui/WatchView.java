@@ -205,10 +205,6 @@ public class WatchView
 		{
 			out.add(r.getTint().getLabel().toLowerCase() + " flash");
 		}
-		if (r.isChat())
-		{
-			out.add("chat");
-		}
 		String said = out.isEmpty() ? "Nothing to do" : String.join(", ", out);
 		return Character.toUpperCase(said.charAt(0)) + said.substring(1) + "  ·  rests " + rest(r.getCooldown());
 	}
@@ -385,12 +381,6 @@ public class WatchView
 			d.setFlash(on);
 			rebuild.run();
 		}));
-		then.add(Box.createHorizontalStrut(4));
-		then.add(new Controls.Chip("Chat", d.isChat(), on ->
-		{
-			d.setChat(on);
-			refreshProblem();
-		}));
 		parts.add(labelled("Then", then));
 		if (d.isFlash())
 		{
@@ -428,7 +418,7 @@ public class WatchView
 		buttons.add(Box.createHorizontalStrut(4));
 		buttons.add(new CodexButton("Try it", false, () ->
 		{
-			if (d.isNotify() || d.isFlash() || d.isChat())
+			if (d.isNotify() || d.isFlash())
 			{
 				onTry.accept(d.copy().repair());
 				tried = "Fired once, as it will in game";
@@ -523,9 +513,9 @@ public class WatchView
 				return "Pattern: " + c.getError();
 			}
 		}
-		if (!d.isNotify() && !d.isFlash() && !d.isChat())
+		if (!d.isNotify() && !d.isFlash())
 		{
-			return "Choose notify, flash or chat";
+			return "Choose notify or flash";
 		}
 		return null;
 	}

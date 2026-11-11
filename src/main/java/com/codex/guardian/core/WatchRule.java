@@ -4,7 +4,7 @@ import java.util.Locale;
 
 /**
  * One alarm the player writes for themselves: a trigger (a game message, a stat falling below a number, a full pack,
- * standing idle...) and what to do when it comes (a notification, a flash at the screen edge, a line in the chat),
+ * standing idle...) and what to do when it comes (a notification or a flash at the screen edge),
  * then a rest before it may come again. Plain data, saved as JSON in the account's RuneLite profile; every field is
  * brought back to sense by {@link #repair()}, so a hand-edited or damaged save can never hold a rule that misbehaves.
  */
@@ -122,6 +122,10 @@ public final class WatchRule
 	boolean notify;
 	boolean flash;
 	Tint tint;
+	/**
+	 * Older versions could also write a line in the game's chatbox. Codex never writes in the chatbox any more, so a
+	 * saved rule that asked for it is read as a notification instead (see {@link #repair()}); kept only to read it.
+	 */
 	boolean chat;
 	int cooldown = COOLDOWN_DEFAULT;
 
@@ -212,6 +216,12 @@ public final class WatchRule
 		{
 			tint = Tint.GOLD;
 		}
+		if (chat)
+		{
+			// The chatbox line is gone; the rule still tells you, with a notification.
+			chat = false;
+			notify = true;
+		}
 		cooldown = clamp(cooldown, COOLDOWN_MIN, COOLDOWN_MAX);
 		return this;
 	}
@@ -219,7 +229,7 @@ public final class WatchRule
 	/** True when the rule has what it needs to fire: words for a message, a name for an item, an action to take. */
 	public boolean isComplete()
 	{
-		if (trigger == null || !notify && !flash && !chat)
+		if (trigger == null || !notify && !flash)
 		{
 			return false;
 		}
