@@ -98,9 +98,6 @@ import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.client.Notifier;
 import net.runelite.client.callback.ClientThread;
-import net.runelite.client.chat.ChatMessageBuilder;
-import net.runelite.client.chat.ChatMessageManager;
-import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ClientShutdown;
@@ -129,7 +126,7 @@ public class CodexGuardianPlugin extends Plugin
 	/** The game's line when an ice spell freezes you, as RuneLite's own timers read it. */
 	/** The player's own watch rules, per account, with a version inside. */
 	static final String WATCH_KEY = "watchRulesV1";
-	/** Guardian's own chat lines start so, and are never read back as a game message a rule could match. */
+	/** Older Guardians wrote chat lines starting so; one still in the chat history is never matched by a rule. */
 	static final String WATCH_CHAT_PREFIX = "Guardian watch: ";
 	/** A player with no animation playing has the idle animation, -1 (RuneLite's AnimationID.IDLE). */
 	private static final int IDLE_ANIMATION = -1;
@@ -198,9 +195,6 @@ public class CodexGuardianPlugin extends Plugin
 
 	@Inject
 	private PerilVignette vignette;
-
-	@Inject
-	private ChatMessageManager chatMessageManager;
 
 	private final WatchBanner banner = new WatchBanner();
 	/** This account's watch rules, or null until a profile is loaded. Client thread only. */
@@ -1717,18 +1711,14 @@ public class CodexGuardianPlugin extends Plugin
 		{
 			fireWatch(alert);
 		}
-		List<WatchRule> paused = ruleWatch.takePaused();
-		for (WatchRule rule : paused)
-		{
-			chat("the rule \"" + rule.getName() + "\" is paused until you log in again: its pattern took too long.");
-		}
-		if (!paused.isEmpty())
+		// A rule paused for a pattern that took too long is shown as paused on the Watch page; nothing is written in chat.
+		if (!ruleWatch.takePaused().isEmpty())
 		{
 			publishWatch();
 		}
 	}
 
-	/** Does what a fired rule asks: a notification, a flash with its banner, a chat line. */
+	/** Does what a fired rule asks: a notification, a flash with its banner. Codex never writes in the chatbox. */
 	private void fireWatch(RuleWatch.Alert alert)
 	{
 		WatchRule rule = alert.getRule();
@@ -1743,19 +1733,6 @@ public class CodexGuardianPlugin extends Plugin
 			vignette.flashRule(color, now);
 			banner.show(new WatchBanner.Shown(rule.getName(), alert.getDetail(), color, now));
 		}
-		if (rule.isChat())
-		{
-			chat(alert.line());
-		}
-	}
-
-	private void chat(String line)
-	{
-		String message = new ChatMessageBuilder()
-			.append(Theme.GOLD, WATCH_CHAT_PREFIX)
-			.append(line)
-			.build();
-		chatMessageManager.queue(QueuedMessage.builder().type(ChatMessageType.GAMEMESSAGE).runeLiteFormattedMessage(message).build());
 	}
 
 	private Inquests loadInquests(String profile)
