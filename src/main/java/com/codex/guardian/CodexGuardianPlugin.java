@@ -3,6 +3,7 @@ package com.codex.guardian;
 import com.codex.guardian.core.Advice;
 import com.codex.guardian.core.CloseCallWatch;
 import com.codex.guardian.core.DamageLog;
+import com.codex.guardian.core.HardcoreRules;
 import com.codex.guardian.core.HitMemory;
 import com.codex.guardian.core.Inquest;
 import com.codex.guardian.core.Inquests;
@@ -90,6 +91,7 @@ import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.events.StatChanged;
 import net.runelite.api.events.WidgetClosed;
+import net.runelite.api.events.WidgetLoaded;
 import net.runelite.api.gameval.ItemID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.api.gameval.InterfaceID;
@@ -564,6 +566,29 @@ public class CodexGuardianPlugin extends Plugin
 	}
 
 	@Subscribe
+	public void onWidgetLoaded(WidgetLoaded event)
+	{
+		if (event.getGroupId() == InterfaceID.HC_DEATH_CHOICE)
+		{
+			deathChoiceShown();
+		}
+	}
+
+	/**
+	 * The game's Reset or Transfer choice (RuneLite's gameval HcDeathChoice: OPTION_RESET, OPTION_TRANSFER) opened: the
+	 * game itself says the death ended the run, so a death Guardian kept open or took as safe is recorded as fallen.
+	 */
+	private void deathChoiceShown()
+	{
+		if (journal != null && journal.confirmFallen(System.currentTimeMillis()))
+		{
+			journalChanged = true;
+			saveJournal();
+			publishJournal();
+		}
+	}
+
+	@Subscribe
 	public void onStatChanged(StatChanged event)
 	{
 		Skill skill = event.getSkill();
@@ -674,8 +699,9 @@ public class CodexGuardianPlugin extends Plugin
 		keepInquest(inquestRecorder.death(place(situation), Inquest.Kit.of(readiness), System.currentTimeMillis()));
 		if (situation.isOneLife() && Zones.isUnconfirmedSafe(situation.getZone()))
 		{
-			// A minigame on a Hardcore World: the advice treated it as deadly, but the record must not say the run
-			// fell when it may not have. The player can mark it as fallen from the journal.
+			// On a Hardcore World, somewhere the place alone cannot say whether the run fell (an unlisted minigame, a
+			// diary's resurrection, a boat): the record stays open until the game asks Reset or Transfer, or the
+			// player marks it as fallen from the journal.
 			journal.unconfirmedDeath(place(situation), lastHitSource, recorder.death(), System.currentTimeMillis());
 		}
 		else
@@ -797,11 +823,11 @@ public class CodexGuardianPlugin extends Plugin
 		WorldPoint where = location(local);
 		boolean inWilderness = client.getVarbitValue(VarbitID.INSIDE_WILDERNESS) == 1;
 		int wild = inWilderness ? wildernessLevel(where) : 0;
-		Zone zone = where == null ? null : Zones.forRegion(where.getRegionID());
-		if (hardcoreWorld)
+		// On a Hardcore World each place reads by that mode's own death list (wiki: Hardcore Worlds).
+		Zone zone = where == null ? null : Zones.forRegion(where.getRegionID(), hardcoreWorld);
+		if (zone == null && hardcoreWorld && client.getVarbitValue(VarbitID.SAILING_PLAYER_IS_ON_PLAYER_BOAT) == 1)
 		{
-			// Whether a minigame death is still free on Hardcore Worlds can't be checked before they open: not safe.
-			zone = Zones.onHardcoreWorld(zone);
+			zone = Zones.atSea();
 		}
 		if (wild > 0)
 		{
@@ -1106,7 +1132,7 @@ public class CodexGuardianPlugin extends Plugin
 			return;
 		}
 		boolean risky = zone.getRisk().atLeast(Risk.MEDIUM) || zone.getKind() == Zone.Kind.WILDERNESS
-			|| zone.getRisk() == Risk.SAFE;
+			|| zone.getRisk() == Risk.SAFE || zone.getDeathRule() != null;
 		if (risky && config.briefings())
 		{
 			brief(Briefing.ZONE, zone);
@@ -1464,16 +1490,21 @@ public class CodexGuardianPlugin extends Plugin
 					return null;
 				}
 				List<WardOverlay.Check> checks;
+				Zone.DeathRule rule = zone.getDeathRule();
 				if (zone.getRisk() == Risk.SAFE)
 				{
-					checks = Collections.singletonList(new WardOverlay.Check(Mark.Kind.GOOD, "Deaths here are normally safe"));
+					checks = Collections.singletonList(new WardOverlay.Check(Mark.Kind.GOOD,
+						rule == Zone.DeathRule.SAFE ? "Safe death here, even on a Hardcore World" : "Deaths here are normally safe"));
 				}
 				else
 				{
 					checks = new ArrayList<>(kitChecks(s));
-					if (Zones.isUnconfirmedSafe(zone))
+					if (rule != null)
 					{
-						checks.add(0, new WardOverlay.Check(Mark.Kind.WARN, "Safe death unconfirmed here"));
+						// The Hardcore World verdict comes first: it is the one thing a player asks at this door.
+						checks.add(0, new WardOverlay.Check(rule == Zone.DeathRule.UNCONFIRMED || rule == Zone.DeathRule.BOAT
+							? Mark.Kind.WARN : Mark.Kind.BAD, rule == Zone.DeathRule.UNSAFE || rule == Zone.DeathRule.UNSAFE_UNLESS_DIARY
+							? "This death ends your run" : HardcoreRules.verdict(rule)));
 					}
 					// A place you nearly died at gets a reminder at its door: the first thing remembered there.
 					List<String> memory = PlaceMemory.lines(journal, hits, PlaceMemory.placeOf(s));

@@ -1,0 +1,46 @@
+# A character on a Hardcore World walks into places on the mode's death list, then the game asks
+# Reset or Transfer. Scenes are schematic: each place is only its map square.
+#
+# Facts: the death list is the wiki's (Hardcore_Worlds, "The following activities are SAFE..." and
+# "...UNSAFE and dying in them will result in an official death"). Map squares are RuneLite's own
+# (DiscordGameEventType): Castle Wars 9520, Nightmare Zone 9033, Fortis Colosseum 7216. The world
+# flag is RuneLite's WorldType.HARDCORE_MAIN; the choice is gameval InterfaceID.HC_DEATH_CHOICE.
+
+world 480 HARDCORE_MAIN
+skill HITPOINTS 40
+skill PRAYER 20
+watch rule situation.zone.deathRule
+watch place situation.zone.name
+watch deaths journal.deaths
+watch open journal.unconfirmedDeaths
+
+# Castle Wars: on the safe list.
+scene 2368 3072
+at 2400 3100
+login
+tick 3
+expect place = "Castle Wars"
+expect rule = SAFE
+
+# Nightmare Zone: on the unsafe list.
+scene 2240 4672
+at 2270 4700
+tick 3
+expect place = "Nightmare Zone"
+expect rule = UNSAFE
+
+# The Colosseum is not on the list either way.
+scene 1792 3072
+at 1820 3100
+tick 3
+expect place = "Fortis Colosseum"
+expect rule = UNCONFIRMED
+
+# The game asks Reset or Transfer: the fall is recorded even though Guardian saw no death.
+call deathChoiceShown
+tick 1
+expect deaths = 1
+call deathChoiceShown
+tick 1
+expect deaths = 1
+shutdown

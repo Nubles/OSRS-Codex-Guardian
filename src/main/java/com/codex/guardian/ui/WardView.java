@@ -239,7 +239,13 @@ final class WardView
 		pills.setOpaque(false);
 		if (zone != null)
 		{
-			if (zone.getKind() != Zone.Kind.WILDERNESS)
+			Zone.DeathRule rule = zone.getDeathRule();
+			if (rule != null)
+			{
+				// On a Hardcore World what a death here means is the first thing to know; it takes the kind's place.
+				pills.add(new Pill(rulePill(rule), ruleColor(rule)));
+			}
+			else if (zone.getKind() != Zone.Kind.WILDERNESS)
 			{
 				pills.add(new Pill(zone.kindLabel(), Theme.GOLD));
 			}
@@ -297,6 +303,36 @@ final class WardView
 		}
 		card.add(body, BorderLayout.CENTER);
 		return card;
+	}
+
+	/** The Hardcore World death rule in a pill's few words. */
+	static String rulePill(Zone.DeathRule rule)
+	{
+		switch (rule)
+		{
+			case SAFE:
+				return "Safe death";
+			case BOAT:
+				return "Capsize only";
+			case UNCONFIRMED:
+				return "Unconfirmed";
+			default:
+				return "Ends your run";
+		}
+	}
+
+	static Color ruleColor(Zone.DeathRule rule)
+	{
+		switch (rule)
+		{
+			case SAFE:
+				return Theme.GREEN;
+			case BOAT:
+			case UNCONFIRMED:
+				return Theme.EMBER;
+			default:
+				return Theme.BLOOD;
+		}
 	}
 
 	private static Card readiness(Situation s, int foodReserve)

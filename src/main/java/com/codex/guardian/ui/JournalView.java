@@ -1,5 +1,6 @@
 package com.codex.guardian.ui;
 
+import com.codex.guardian.core.HardcoreRules;
 import com.codex.guardian.core.Journal;
 import com.codex.guardian.core.Replay;
 import com.codex.guardian.core.Situation;
@@ -62,6 +63,10 @@ final class JournalView
 		if (situation.isLoggedIn())
 		{
 			stack.add(mode(situation, oneLifeToggle));
+			if (HARDCORE_WORLD.equals(situation.getMode()))
+			{
+				stack.add(hardcoreRules());
+			}
 		}
 
 		List<Journal.Entry> entries = journal.getEntries();
@@ -76,6 +81,39 @@ final class JournalView
 		}
 		stack.add(page);
 		return stack;
+	}
+
+	static final String HARDCORE_WORLD = "Hardcore World";
+
+	/**
+	 * Which deaths end a Hardcore World run, as the wiki lists them (see {@link HardcoreRules}), so the question every
+	 * new player asks has its answer one tab away.
+	 */
+	static Card hardcoreRules()
+	{
+		Card card = new Card(null);
+		card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
+		card.setBorder(new EmptyBorder(8, 10, 8, 10));
+		add(card, Ui.label("DEATH RULES HERE", Theme.small(), Theme.GOLD), 0);
+		ruleGroup(card, "Safe: the run goes on", Theme.GREEN, HardcoreRules.SAFE);
+		ruleGroup(card, "Unsafe: the run ends", Theme.BLOOD, HardcoreRules.UNSAFE);
+		ruleGroup(card, "Not listed yet: taken as unsafe", Theme.EMBER, HardcoreRules.UNLISTED);
+		add(card, Ui.wrapped("From the wiki's Hardcore Worlds page. If the game asks Reset or Transfer, Guardian records "
+			+ "the fall, wherever it happened.", Theme.small(), Theme.TEXT_FAINT, 176), 6);
+		return card;
+	}
+
+	private static void ruleGroup(Card card, String heading, java.awt.Color color, List<String> names)
+	{
+		add(card, Ui.label(heading, Theme.small(), color), 6);
+		add(card, Ui.wrapped(String.join("  ·  ", names), Theme.small(), Theme.TEXT_MUTED, 176), 2);
+	}
+
+	private static void add(JPanel card, JComponent c, int top)
+	{
+		c.setBorder(new EmptyBorder(top, 0, 0, 0));
+		c.setAlignmentX(0f);
+		card.add(c);
 	}
 
 	/** Logged out: what the journal opens on, so the page is a promise rather than a blank. */
@@ -136,7 +174,7 @@ final class JournalView
 		text.setLayout(new BoxLayout(text, BoxLayout.Y_AXIS));
 		boolean hardcore = toggle == null;
 		text.add(Ui.label(s.isOneLife() ? "ONE LIFE" : "ORDINARY ACCOUNT", Theme.small(), s.isOneLife() ? Theme.GOLD : Theme.TEXT_MUTED));
-		String line = hardcore ? "Hardcore World".equals(s.getMode()) ? "On a Hardcore World. A death ends the run."
+		String line = hardcore ? HARDCORE_WORLD.equals(s.getMode()) ? "On a Hardcore World. An unsafe death ends the run."
 			: "Recognised as " + s.getMode()
 			: s.isOneLife() ? "Marked one-life by you. A death ends the run." : "A death is journaled, not the end of the run.";
 		text.add(Ui.wrapped(line, Theme.small(), Theme.TEXT_MUTED, 190));
@@ -197,7 +235,8 @@ final class JournalView
 		if (e.getType() == Journal.Type.UNCONFIRMED_DEATH)
 		{
 			// Nobody can yet confirm a minigame death is safe on a Hardcore World, so the run is not called fallen.
-			JLabel why = Ui.wrapped("On a Hardcore World this may not count. If the game ended your run, mark it.",
+			JLabel why = Ui.wrapped("On a Hardcore World this may not count. If the game asks Reset or Transfer, "
+				+ "Guardian marks the fall itself; if it ended your run on another client, mark it.",
 				Theme.small(), Theme.TEXT_FAINT, TEXT);
 			why.setAlignmentX(0f);
 			text.add(why);

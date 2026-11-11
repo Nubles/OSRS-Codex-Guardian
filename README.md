@@ -95,7 +95,22 @@ Part of the **Codex** suite of RuneLite plugins, which share one look: warm ink,
 
 ## Hardcore Worlds and one-life accounts
 
-Hardcore Ironmen and any account on a Hardcore World are recognised by themselves. Until their rules can be checked, Guardian does not take any minigame as safe on a Hardcore World: Fight Caves, the Inferno, the Colosseum, the Gauntlet, Pest Control and the rest read as a risk there. A death in one is journaled as an "Unconfirmed death"; if the game did end your run, **Mark as fallen** under that entry records it. For any other one-life account, press **Mark one-life** in the Journal tab. The choice belongs to that account alone.
+Hardcore Ironmen and any account on a Hardcore World are recognised by themselves. For any other one-life account, press **Mark one-life** in the Journal tab. The choice belongs to that account alone.
+
+On a Hardcore World, Guardian follows the mode's own death list from the wiki:
+
+- **Safe, the run goes on:** capsizing your boat (no other death on it), Castle Wars, Clan Wars, Emir's Arena, Koschei's 4th phase in The Fremennik Trials, Last Man Standing, Pete Kayer's Challenges, the Galvek and Glough replays, Soul Wars, the TzHaar Fight Pit, and at Zulrah only the Elite Western Provinces resurrection.
+- **Unsafe, the run ends:** Barbarian Assault, the Camelot training room, Chambers of Xeric, the Dream World in Lunar Diplomacy, Fishing Trawler, the Inferno, Magic Training Arena, Nightmare Zone, Pest Control, your player-owned house, the PvM Arena, the TzHaar Fight Cave (its elite diary resurrection is safe), random events and the Rogues' Den maze.
+- **Not listed yet:** the Fortis Colosseum, the Gauntlet and Trouble Brewing are treated as unsafe.
+
+Walk into a listed place and the plaque says so at the door ("Safe death here, even on a Hardcore World" or "This death ends your run"), the Ward's place card carries a **Safe death** or **Ends your run** pill, and on your boat it reads **Capsize only**. The Journal lists the whole ruleset under the account's mode.
+
+<p align="center">
+  <img src="docs/screenshots/16-hcw-ward.png" width="225" alt="The Ward on a Hardcore World in Nightmare Zone: a death here ends your run">
+  <img src="docs/screenshots/17-hcw-rules.png" width="225" alt="The Hardcore Worlds death list in the Journal">
+</p>
+
+Where the place alone cannot tell (an unlisted minigame, a diary's resurrection, a boat), a death is journaled as an **Unconfirmed death**. When the game then asks you to Reset or Transfer, which it only does after a death that ended the run, Guardian records the fall by itself; if the run ended on another client, **Mark as fallen** under the entry does it.
 
 ## With other Codex plugins
 

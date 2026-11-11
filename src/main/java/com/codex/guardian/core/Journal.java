@@ -338,6 +338,54 @@ public final class Journal
 		return false;
 	}
 
+	/** A death this recent is the one the game's Reset or Transfer choice is about. */
+	static final long CONFIRM_WINDOW_MS = 10 * 60 * 1000L;
+	/** Detail of a fall Guardian learned of only from the game's choice. */
+	public static final String CHOICE_DETAIL = "The game asked: Reset or Transfer";
+
+	/**
+	 * The game asked a Hardcore World player to Reset or Transfer, which it does only after a death that ended the
+	 * run. The latest death, if Guardian kept it open (an unlisted minigame, a diary's resurrection, a boat) or took it
+	 * as safe, becomes the fall; with no death recorded since the run began (one missed while away), the fall is
+	 * written now. Nothing changes when the run is already recorded as fallen, so the choice opening again is harmless.
+	 *
+	 * @return true when the journal changed
+	 */
+	public boolean confirmFallen(long now)
+	{
+		for (int i = entries.size() - 1; i >= 0; i--)
+		{
+			Entry e = entries.get(i);
+			if (e.type == Type.DEATH || e.type == Type.STATUS_LOST)
+			{
+				return false;
+			}
+			if (e.type == Type.RUN_STARTED)
+			{
+				break;
+			}
+			// An open death is the one, however long the player sat at the choice; a safe one only if it was just now.
+			if (e.type == Type.UNCONFIRMED_DEATH || e.type == Type.SAFE_DEATH && now - e.at <= CONFIRM_WINDOW_MS)
+			{
+				if (e.type == Type.UNCONFIRMED_DEATH)
+				{
+					unconfirmedDeaths = Math.max(0, unconfirmedDeaths - 1);
+				}
+				else
+				{
+					safeDeaths = Math.max(0, safeDeaths - 1);
+				}
+				e.type = Type.DEATH;
+				e.title = "The run has fallen";
+				deaths++;
+				return true;
+			}
+		}
+		deaths++;
+		add(now, Type.DEATH, "The run has fallen", CHOICE_DETAIL);
+		return true;
+	}
+
 	public int getUnconfirmedDeaths()
 	{
 		return unconfirmedDeaths;
